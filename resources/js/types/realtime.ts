@@ -21,12 +21,10 @@ export type RealtimeSignal =
           version: number;
       }
     | {
-          type: 'call.incoming';
+          type: 'call.card';
           id: string;
           call_id: number;
+          state: 'ringing' | 'talking' | 'ended' | 'missed' | 'revoked';
           version: number;
-          order_id: number | null;
-          label: string | null;
-          url: string | null;
       }
     | { type: 'resync' };

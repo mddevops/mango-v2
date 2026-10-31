@@ -165,6 +165,33 @@
     }
 }
 
+@keyframes shine-scan {
+    from {
+        mask-position: 0% -100%;
+    }
+
+    to {
+        mask-position: 0% 200%;
+    }
+}
+
+@utility animate-shine-scan {
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 25%,
+        transparent 40%
+    );
+    mask-size: 100% 300%;
+    animation: shine-scan var(--duration, 3s) linear infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+        mask-image: none;
+    }
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Inter Variable', sans-serif;

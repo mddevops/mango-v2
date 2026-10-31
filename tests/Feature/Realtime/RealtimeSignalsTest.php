@@ -3,7 +3,6 @@
 namespace Tests\Feature\Realtime;
 
 use App\Events\Realtime\CallChanged;
-use App\Events\Realtime\IncomingCall;
 use App\Events\Realtime\RealtimeSignal;
 use App\Models\Call;
 use App\Models\ContactChannel;
@@ -12,6 +11,7 @@ use App\Models\Showroom;
 use App\Models\User;
 use App\Services\OrderManager;
 use App\Support\PermissionCatalog as P;
+use App\Support\Phone;
 use Carbon\CarbonImmutable;
 use Database\Seeders\OrderReferenceDataSeeder;
 use Database\Seeders\ReferenceDataSeeder;
@@ -48,6 +48,9 @@ class RealtimeSignalsTest extends TestCase
 
     /** @var list<RealtimeSignal> */
     private array $sent = [];
+
+    /** @var list<array{type: string, to: list<int>, payload: array<string, mixed>}> */
+    private array $delivered = [];
 
     private int $phone = 0;
 
@@ -211,19 +214,6 @@ class RealtimeSignalsTest extends TestCase
         $this->assertNotContains($viewer->id, $history);
         $this->assertNotContains($operator->id, $history);
 
-        /** @var IncomingCall $incoming */
-        $incoming = $this->signals('call.incoming')->sole();
-        $this->assertSame([$operator->id], $this->recipients($incoming));
-        $this->assertSame([
-            'type' => 'call.incoming',
-            'id' => $incoming->id,
-            'call_id' => $call->id,
-            'version' => $incoming->legId,
-            'order_id' => $call->order_id,
-            'label' => "Заявка №{$call->order_id}",
-            'url' => "/orders/{$call->order_id}",
-        ], $incoming->broadcastWith());
-
         $this->sent = [];
         $this->mangoEvent($connection, 'record/added', ['entry_id' => 'entry-1', 'product_id' => 1, 'user_id' => -1, 'timestamp' => $this->at(60), 'recording_id' => 'rec-1'])->assertOk();
 
@@ -231,16 +221,145 @@ class RealtimeSignalsTest extends TestCase
         $recording = $this->signals('call.updated')->sole();
         $this->assertSame('listenRecordings', $recording->ability);
         $this->assertSame($this->ids($this->admin, $listener), $this->recipients($recording));
+    }
 
-        // The order of this client belongs to the operator: an employee who may not open
-        // it gets no incoming call notice.
-        $this->sent = [];
+    public function test_an_unassigned_order_reaches_only_those_who_see_all_orders_of_its_showroom(): void
+    {
+        $this->captureSignals();
+        $operator = $this->mangoEmployee('Оператор', [$this->showroom]);
+        $manager = $this->mangoEmployee('Руководитель', [$this->showroom], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL]);
+        $stranger = $this->mangoEmployee('Чужой салон', [Showroom::factory()->create()], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL]);
 
-        foreach ($this->routedCall('entry-2', '124', 300, false) as $event) {
+        $this->order();
+
+        $changed = $this->signals('order.updated')->sole();
+        $this->assertSame($this->ids($this->admin, $manager), $this->recipients($changed));
+        $this->assertNotContains($operator->id, $this->recipients($changed));
+        $this->assertNotContains($stranger->id, $this->recipients($changed));
+        $this->assertSame([], $this->signals('order.assigned')->all());
+    }
+
+    public function test_the_call_card_goes_only_to_the_addressed_employee_and_follows_the_call(): void
+    {
+        $this->captureSignals();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 12:05', 'Europe/Moscow'));
+        $connection = $this->mangoConnection($this->showroom);
+        $this->bindLine($connection, $this->makeSource($this->showroom), self::LINE);
+        $operator = $this->mangoEmployee('Оператор', [$this->showroom]);
+        $other = $this->mangoEmployee('Другой оператор', [$this->showroom]);
+        $manager = $this->mangoEmployee('Старший', [$this->showroom], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL, P::ORDERS_UPDATE]);
+        $senior = $this->mangoEmployee('Старший без номера', [$this->showroom], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL, P::ORDERS_HISTORY]);
+        $this->extension($connection, '123', $operator);
+        $this->extension($connection, '124', $other);
+        $this->extension($connection, '125', $manager);
+
+        // A new unassigned order: the operator may not open it until he answers and
+        // becomes responsible, so before the answer he is told only to close the card.
+        foreach ($this->routedCall('entry-1') as $event) {
             $this->mangoEvent($connection, 'call', $event)->assertOk();
         }
 
-        $this->assertSame([], $this->recipients($this->signals('call.incoming')->sole()));
+        $call = Call::query()->where('entry_id', 'entry-1')->sole();
+        $this->assertSame([[$operator->id, 'revoked'], [$operator->id, 'talking'], [$operator->id, 'ended']], $this->cards());
+        $this->assertSame(['type', 'id', 'call_id', 'state', 'version'], array_keys($this->delivered[array_key_last($this->delivered)]['payload']));
+        $this->assertNotContains($this->admin->id, array_column($this->cards(), 0));
+        $this->assertNotContains($senior->id, array_column($this->cards(), 0));
+
+        // A repeat call of the operator's client rings at a senior: he may open the order
+        // and sees the card before the answer; answering does not change the responsible.
+        $this->delivered = [];
+
+        foreach ($this->routedCall('entry-2', '125', 300) as $event) {
+            $this->mangoEvent($connection, 'call', $event)->assertOk();
+        }
+
+        $repeat = Call::query()->where('entry_id', 'entry-2')->sole();
+        $this->assertSame($call->order_id, $repeat->order_id);
+        $this->assertSame([[$manager->id, 'ringing'], [$manager->id, 'talking'], [$manager->id, 'ended']], $this->cards());
+        $this->assertSame($operator->id, Order::query()->findOrFail($call->order_id)->responsible_id);
+
+        // An employee who may not open the order gets no card data.
+        $this->delivered = [];
+
+        foreach ($this->routedCall('entry-3', '124', 600, false) as $event) {
+            $this->mangoEvent($connection, 'call', $event)->assertOk();
+        }
+
+        $this->assertSame([[$other->id, 'revoked'], [$other->id, 'revoked']], $this->cards());
+    }
+
+    public function test_the_call_card_data_is_given_only_to_an_addressed_employee_who_may_open_the_order(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 12:05', 'Europe/Moscow'));
+        $connection = $this->mangoConnection($this->showroom);
+        $source = $this->makeSource($this->showroom, ['name' => 'Сайт салона']);
+        $this->bindLine($connection, $source, self::LINE);
+        $operator = $this->mangoEmployee('Оператор', [$this->showroom]);
+        $other = $this->mangoEmployee('Другой оператор', [$this->showroom]);
+        $senior = $this->mangoEmployee('Старший без номера', [$this->showroom], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL]);
+        $stranger = $this->mangoEmployee('Чужой салон', [Showroom::factory()->create()], [P::ORDERS_VIEW, P::ORDERS_VIEW_ALL]);
+        $this->extension($connection, '123', $operator);
+        $this->extension($connection, '124', $other);
+        $this->extension($connection, '126', $stranger);
+
+        foreach ($this->routedCall('entry-1') as $event) {
+            $this->mangoEvent($connection, 'call', $event)->assertOk();
+        }
+
+        $call = Call::query()->where('entry_id', 'entry-1')->sole();
+        $order = Order::query()->findOrFail($call->order_id);
+
+        $this->actingAs($operator)->getJson("/calls/{$call->id}/card")
+            ->assertOk()
+            ->assertExactJson([
+                'call_id' => $call->id,
+                'state' => 'ended',
+                'phone' => Phone::format($call->client_phone),
+                'client' => $order->contact_name,
+                'status' => $order->status->name,
+                'source' => 'Сайт салона',
+                'responsible' => 'Оператор',
+                'order_id' => $order->id,
+                'order_created_at' => $order->created_at->toISOString(),
+                'url' => "/orders/{$order->id}",
+            ]);
+
+        // Seeing all orders gives no card; nor does an extension of a foreign showroom
+        // or of an operator who may not open the order.
+        foreach (['entry-2' => '124', 'entry-3' => '126'] as $entry => $extension) {
+            foreach ($this->routedCall($entry, $extension, 300, false) as $event) {
+                $this->mangoEvent($connection, 'call', $event)->assertOk();
+            }
+        }
+
+        $this->actingAs($senior)->getJson("/calls/{$call->id}/card")->assertNotFound();
+        $this->actingAs($this->admin)->getJson("/calls/{$call->id}/card")->assertNotFound();
+        $foreignCall = Call::query()->where('entry_id', 'entry-3')->sole();
+        $this->actingAs($stranger)->getJson("/calls/{$foreignCall->id}/card")->assertNotFound();
+        $otherCall = Call::query()->where('entry_id', 'entry-2')->sole();
+        $this->actingAs($other)->getJson("/calls/{$otherCall->id}/card")->assertNotFound();
+        $this->actingAs($operator)->getJson('/calls/999999/card')->assertNotFound();
+    }
+
+    public function test_the_browser_is_authorized_only_for_its_own_channel(): void
+    {
+        config([
+            'broadcasting.default' => 'reverb',
+            'broadcasting.connections.reverb.key' => 'test-key',
+            'broadcasting.connections.reverb.secret' => 'test-secret',
+            'broadcasting.connections.reverb.app_id' => 'test-app',
+        ]);
+        Broadcast::purge('reverb');
+        require base_path('routes/channels.php');
+        $operator = $this->mangoEmployee('Оператор', [$this->showroom]);
+
+        $this->actingAs($operator)
+            ->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => "private-App.Models.User.{$operator->id}"])
+            ->assertOk()
+            ->assertJsonStructure(['auth']);
+        $this->actingAs($operator)
+            ->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => "private-App.Models.User.{$this->admin->id}"])
+            ->assertForbidden();
     }
 
     private function captureSignals(): void
@@ -248,8 +367,23 @@ class RealtimeSignalsTest extends TestCase
         $this->mock(BroadcastManager::class, function (MockInterface $mock) {
             $mock->shouldReceive('queue')->andReturnUsing(function (RealtimeSignal $signal) {
                 $this->sent[] = $signal;
+                $this->delivered[] = ['type' => $signal->broadcastAs(), 'to' => $this->recipients($signal), 'payload' => $signal->broadcastWith()];
             });
         });
+    }
+
+    /**
+     * The call cards as the worker would send them right away: [recipient, state].
+     *
+     * @return list<array{int, string}>
+     */
+    private function cards(): array
+    {
+        return collect($this->delivered)
+            ->where('type', 'call.card')
+            ->flatMap(fn (array $card) => array_map(fn (int $id) => [$id, $card['payload']['state']], $card['to']))
+            ->values()
+            ->all();
     }
 
     /**

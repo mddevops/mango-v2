@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Distribution\DistributionController;
+use App\Http\Controllers\Orders\CallCardController;
 use App\Http\Controllers\Orders\CallRecordingController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderReasonController;
@@ -103,6 +104,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('orders/{order}', [OrderController::class, 'show'])->whereNumber('order')->name('orders.show');
     Route::put('orders/{order}', [OrderController::class, 'update'])->whereNumber('order')->name('orders.update');
     Route::get('orders/{order}/access', [OrderController::class, 'access'])->whereNumber('order')->name('orders.access');
+    Route::get('calls/{call}/card', [CallCardController::class, 'show'])->whereNumber('call')->middleware('throttle:120,1')->name('calls.card');
     Route::get('orders/{order}/previous', [OrderController::class, 'previous'])->whereNumber('order')->name('orders.previous');
     Route::post('orders/{order}/comments', [OrderController::class, 'storeComment'])->whereNumber('order')->name('orders.comments.store');
     Route::post('orders/{order}/distribution', [DistributionController::class, 'distribute'])->whereNumber('order')->name('orders.distribute');

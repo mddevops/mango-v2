@@ -10,10 +10,29 @@ import ReferencesLayout from '@/layouts/references/layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import { configureEcho } from '@laravel/echo-react';
 
+// The page has no CSRF meta tag: the private channel request carries the fresh XSRF
+// cookie (it changes after login and session regeneration), read on every request.
+function xsrfToken(): string {
+    const cookie = document.cookie
+        .split('; ')
+        .find((part) => part.startsWith('XSRF-TOKEN='));
+
+    return cookie ? decodeURIComponent(cookie.slice('XSRF-TOKEN='.length)) : '';
+}
+
 // Without a Reverb key (a local setup without realtime) the pages work without signals.
 if (typeof window !== 'undefined' && import.meta.env.VITE_REVERB_APP_KEY) {
     configureEcho({
         broadcaster: 'reverb',
+        channelAuthorization: {
+            endpoint: '/broadcasting/auth',
+            transport: 'ajax',
+            headersProvider: () => ({
+                'X-XSRF-TOKEN': xsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            }),
+        },
     });
 }
 
@@ -44,7 +63,7 @@ void createInertiaApp({
         return (
             <TooltipProvider delayDuration={0}>
                 {app}
-                <Toaster />
+                <Toaster position="top-right" />
                 <FlashToasts />
             </TooltipProvider>
         );

@@ -10,7 +10,7 @@ const EVENTS = [
     '.order.assigned',
     '.order.access-check',
     '.call.updated',
-    '.call.incoming',
+    '.call.card',
 ];
 
 const SEEN_LIMIT = 500;
@@ -23,27 +23,20 @@ function versionKey(signal: ChannelSignal): string | null {
             return `order:${signal.order_id}`;
         case 'call.updated':
             return `call:${signal.call_id}`;
+        case 'call.card':
+            return `call-card:${signal.call_id}`;
         default:
             return null;
     }
 }
 
 function notify(signal: ChannelSignal): void {
-    const open = (url: string) => ({
-        label: 'Открыть',
-        onClick: () => router.visit(url),
-    });
-
     if (signal.type === 'order.assigned') {
         toast.info(`Вам назначена ${signal.label}`, {
-            action: open(signal.url),
-        });
-    }
-
-    if (signal.type === 'call.incoming') {
-        toast.info('Входящий звонок', {
-            description: signal.label ?? undefined,
-            action: signal.url ? open(signal.url) : undefined,
+            action: {
+                label: 'Открыть',
+                onClick: () => router.visit(signal.url),
+            },
         });
     }
 }

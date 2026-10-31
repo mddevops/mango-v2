@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
+use App\Events\Realtime\CallCard;
 use App\Events\Realtime\CallChanged;
-use App\Events\Realtime\IncomingCall;
 use App\Events\Realtime\OrderAccessCheck;
 use App\Events\Realtime\OrderAssigned;
 use App\Events\Realtime\OrderChanged;
@@ -68,9 +68,9 @@ class RealtimePublisher
         $this->publish(new CallChanged($callId, $this->clock(), 'listenRecordings'));
     }
 
-    public function incomingCall(int $legId, int $callId, int $userId): void
+    public function callCard(int $callId, int $userId): void
     {
-        $this->publish(new IncomingCall($legId, $callId, $userId));
+        $this->publish(new CallCard($callId, $userId));
     }
 
     public function publish(RealtimeSignal ...$signals): void

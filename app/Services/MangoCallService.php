@@ -53,6 +53,7 @@ class MangoCallService
         private readonly OrderManager $orders,
         private readonly AuditLogger $audit,
         private readonly RealtimePublisher $realtime,
+        private readonly CallCards $cards,
     ) {}
 
     public function apply(int $eventId): void
@@ -149,10 +150,8 @@ class MangoCallService
             ->whereNull('call_id')
             ->update(['call_id' => $call->id]);
 
-        $leg = null;
-
         if ($data['kind'] === MangoEvent::CALL) {
-            $leg = $this->applyRealtime($call, $data);
+            $this->applyRealtime($call, $data);
         } else {
             $this->applySummary($call, $data);
         }
@@ -164,36 +163,31 @@ class MangoCallService
         }
 
         $this->settle($call, $connection);
-        $this->announce($call, $connection, $leg);
+        $this->announce($call);
     }
 
     /**
-     * Realtime signals of the event, sent after commit: the call changed, and a client's
-     * call started ringing at an employee (once per leg — a repeated event finds the leg).
+     * Realtime signals of the event, sent after commit: the call changed, and the
+     * incoming call card of every employee the call is addressed to (by the extensions
+     * in its legs). Whether he may see the card is decided when the signal is sent.
      */
-    private function announce(Call $call, IntegrationConnection $connection, ?CallLeg $leg): void
+    private function announce(Call $call): void
     {
         $this->realtime->callChanged($call->id);
 
-        if ($leg === null || ! $leg->wasRecentlyCreated || $leg->state !== 'Appeared' || $leg->to_extension === null
-            || $call->direction !== CallDirection::Inbound || $call->technical) {
+        if ($call->direction !== CallDirection::Inbound || $call->technical || $call->order_id === null) {
             return;
         }
 
-        $userId = TelephonyExtension::query()
-            ->where('integration_connection_id', $connection->id)
-            ->where('extension', $leg->to_extension)
-            ->value('user_id');
-
-        if ($userId !== null) {
-            $this->realtime->incomingCall($leg->id, $call->id, (int) $userId);
+        foreach ($this->cards->targets($call) as $userId) {
+            $this->realtime->callCard($call->id, $userId);
         }
     }
 
     /**
      * @param  CallEvent  $data
      */
-    private function applyRealtime(Call $call, array $data): CallLeg
+    private function applyRealtime(Call $call, array $data): void
     {
         // Locking reads: rows committed by an earlier event of this call must be seen even
         // when this transaction's snapshot is older than that commit.
@@ -242,8 +236,6 @@ class MangoCallService
         }
 
         $this->inferFromLegs($call);
-
-        return $leg;
     }
 
     /**

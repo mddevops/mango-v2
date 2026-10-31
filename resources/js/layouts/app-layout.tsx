@@ -1,5 +1,6 @@
 import { usePage } from '@inertiajs/react';
 import { echoIsConfigured } from '@laravel/echo-react';
+import { IncomingCalls } from '@/components/calls/incoming-calls';
 import { RealtimeBridge } from '@/components/realtime-bridge';
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
 import type { BreadcrumbItem } from '@/types';
@@ -16,7 +17,10 @@ export default function AppLayout({
     return (
         <AppLayoutTemplate breadcrumbs={breadcrumbs}>
             {userId !== undefined && echoIsConfigured() && (
-                <RealtimeBridge key={userId} userId={userId} />
+                <>
+                    <RealtimeBridge key={userId} userId={userId} />
+                    <IncomingCalls key={`calls-${userId}`} />
+                </>
             )}
             {children}
         </AppLayoutTemplate>

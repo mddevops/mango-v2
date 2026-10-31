@@ -35,14 +35,15 @@ return [
             'key' => env('REVERB_APP_KEY'),
             'secret' => env('REVERB_APP_SECRET'),
             'app_id' => env('REVERB_APP_ID'),
-            // The application publishes to Reverb over its internal address (the server
-            // itself listens on REVERB_SERVER_HOST:REVERB_SERVER_PORT); browsers use the
-            // public WSS address from VITE_REVERB_*.
+            // The application publishes straight to the local Reverb server (where it
+            // listens: REVERB_SERVER_HOST:REVERB_SERVER_PORT), never through the public
+            // address: the public proxy passes only the browser path /app, not /apps.
+            // Browsers use the public WSS address from VITE_REVERB_*.
             'options' => [
-                'host' => env('REVERB_INTERNAL_HOST', env('REVERB_HOST')),
-                'port' => env('REVERB_INTERNAL_PORT', env('REVERB_PORT', 443)),
-                'scheme' => env('REVERB_INTERNAL_SCHEME', env('REVERB_SCHEME', 'https')),
-                'useTLS' => env('REVERB_INTERNAL_SCHEME', env('REVERB_SCHEME', 'https')) === 'https',
+                'host' => env('REVERB_INTERNAL_HOST', env('REVERB_SERVER_HOST', '127.0.0.1')),
+                'port' => env('REVERB_INTERNAL_PORT', env('REVERB_SERVER_PORT', 8080)),
+                'scheme' => env('REVERB_INTERNAL_SCHEME', 'http'),
+                'useTLS' => env('REVERB_INTERNAL_SCHEME', 'http') === 'https',
             ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
