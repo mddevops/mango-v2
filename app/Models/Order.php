@@ -226,6 +226,14 @@ class Order extends Model
     }
 
     /**
+     * @return HasMany<Call, $this>
+     */
+    public function calls(): HasMany
+    {
+        return $this->hasMany(Call::class);
+    }
+
+    /**
      * The site request this order was created from.
      *
      * @return HasOne<SiteCallbackRequest, $this>

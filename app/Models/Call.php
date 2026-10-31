@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Enums\CallDirection;
 use App\Enums\CallMatchState;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,6 +41,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property bool $answerer_unresolved
  * @property bool $answer_ambiguous
  * @property string|null $result
+ * @property CarbonImmutable|null $missed_handled_at
+ * @property int|null $missed_handled_by_id
  * @property CarbonImmutable|null $started_at
  * @property CarbonImmutable|null $answered_at
  * @property CarbonImmutable|null $ended_at
@@ -108,7 +112,24 @@ class Call extends Model
             'assigned_user_id' => 'integer',
             'assignment_decided_at' => 'datetime',
             'last_event_at' => 'datetime',
+            'missed_handled_at' => 'datetime',
+            'missed_handled_by_id' => 'integer',
         ];
+    }
+
+    /**
+     * Incoming client calls Mango confirmed as missed (the result comes only with the
+     * summary, so a call still in progress is never here) and nobody marked handled.
+     *
+     * @param  Builder<Call>  $query
+     */
+    #[Scope]
+    protected function unhandledMissed(Builder $query): void
+    {
+        $query->where('calls.direction', CallDirection::Inbound->value)
+            ->where('calls.technical', false)
+            ->where('calls.result', self::MISSED)
+            ->whereNull('calls.missed_handled_at');
     }
 
     /**

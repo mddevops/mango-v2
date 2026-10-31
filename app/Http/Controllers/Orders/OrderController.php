@@ -24,6 +24,7 @@ use App\Models\UserPreference;
 use App\Policies\OrderPolicy;
 use App\Services\AccessScope;
 use App\Services\CallbackDistributor;
+use App\Services\MissedCalls;
 use App\Services\OrderManager;
 use App\Services\OrderTransferManager;
 use App\Support\OrderReasonType;
@@ -33,6 +34,7 @@ use App\Support\Phone;
 use App\Support\TableFilter;
 use App\Support\TableFilters;
 use App\Support\TableQuery;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -50,6 +52,24 @@ class OrderController extends Controller
     private const MAX_RELATED = 50;
 
     private const TAB_ALL = 'all';
+
+    /** Callback within the next hour, status still waiting for it. */
+    private const TAB_URGENT = 'urgent';
+
+    /** Callback time passed, status still waiting for it. */
+    private const TAB_OVERDUE = 'overdue';
+
+    /** At least one unhandled missed call. */
+    private const TAB_MISSED = 'missed';
+
+    private const URGENT_MINUTES = 60;
+
+    /** Default order of a computed tab when the URL has no sort of its own. */
+    private const TAB_SORTS = [
+        self::TAB_URGENT => ['callback_at', 'asc'],
+        self::TAB_OVERDUE => ['callback_at', 'asc'],
+        self::TAB_MISSED => ['last_missed_at', 'desc'],
+    ];
 
     /** The latest comments a list card can page through; the rest are on the order page. */
     private const LIST_COMMENTS = 3;
@@ -81,6 +101,7 @@ class OrderController extends Controller
         private readonly OrderManager $orders,
         private readonly CallbackDistributor $distributor,
         private readonly OrderTransferManager $transfers,
+        private readonly MissedCalls $missed,
     ) {}
 
     public function index(Request $request): Response
@@ -124,11 +145,17 @@ class OrderController extends Controller
             ->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'color']);
         $tab = $this->listTab($request, $tabStatuses->modelKeys());
         $preferences = $this->listPreferences($user);
-        [$sort, $direction] = TableQuery::sort($request, OrdersListPreferences::SORTS, $preferences['sort'] ?? 'received_at', $preferences['direction'] ?? 'desc');
+        $now = CarbonImmutable::now()->startOfSecond();
+        $sorts = $tab === self::TAB_MISSED ? [...OrdersListPreferences::SORTS, 'last_missed_at'] : OrdersListPreferences::SORTS;
+        [$defaultSort, $defaultDirection] = self::TAB_SORTS[$tab] ?? [$preferences['sort'] ?? 'received_at', $preferences['direction'] ?? 'desc'];
+        [$sort, $direction] = TableQuery::sort($request, $sorts, $defaultSort, $defaultDirection);
 
         $filtered = fn (): Builder => $filters->apply($this->scope->orders(Order::query(), $user));
 
-        $paginator = $this->sortList($this->applyTab($filtered(), $tab), $sort, $direction)
+        $paginator = $this->sortList($this->applyTab($filtered(), $tab, $now), $sort, $direction)
+            ->when($tab === self::TAB_MISSED, fn (Builder $query) => $query
+                ->withCount(['calls as missed_count' => fn (Builder $calls) => $calls->unhandledMissed()])
+                ->withMax(['calls as last_missed_at' => fn (Builder $calls) => $calls->unhandledMissed()], 'started_at'))
             ->with(['showroom:id,name,timezone', 'source:id,name,source_kind_id', 'source.kind:id,name,icon,show_icon,icon_color', 'channel:id,name,icon,show_icon,icon_color', 'status:id,name,color', 'responsible:id,name', 'transferOut.toShowroom:id,name', 'transferIn.fromShowroom:id,name'])
             ->with(['comments' => fn ($comments) => $comments
                 ->select(['id', 'order_id', 'author_name', 'body', 'created_at'])
@@ -158,6 +185,7 @@ class OrderController extends Controller
                     'created_at' => $comment->created_at?->toISOString(),
                 ])->all(),
                 'comments_count' => (int) $order->comments_count,
+                ...$this->tabFacts($order, $tab, $now),
             ]),
             'transferShowrooms' => fn () => $user->can(P::ORDERS_TRANSFER)
                 ? $this->options($this->scope->showrooms(Showroom::query(), $user)->where('active', true)->orderBy('name')->get(['id', 'name', 'active']))
@@ -169,7 +197,7 @@ class OrderController extends Controller
                 'direction' => $direction,
                 'tab' => $tab,
             ],
-            'tabs' => fn () => $this->listTabs($filtered(), $tabStatuses),
+            'tabs' => fn () => $this->listTabs($filtered(), $tabStatuses, $now),
             'listPreferences' => $preferences,
             'showrooms' => $this->options($showrooms),
             'sources' => $this->options($sources),
@@ -196,7 +224,7 @@ class OrderController extends Controller
     }
 
     /**
-     * «all» or the id of a status shown as a tab; anything else is «all».
+     * «all», a computed tab or the id of a status shown as a tab; anything else is «all».
      *
      * @param  list<int>  $statusIds
      */
@@ -204,7 +232,7 @@ class OrderController extends Controller
     {
         $tab = $request->query('tab');
 
-        if (is_string($tab) && ctype_digit($tab) && in_array((int) $tab, $statusIds, true)) {
+        if (is_string($tab) && (array_key_exists($tab, self::TAB_SORTS) || (ctype_digit($tab) && in_array((int) $tab, $statusIds, true)))) {
             return $tab;
         }
 
@@ -212,12 +240,44 @@ class OrderController extends Controller
     }
 
     /**
+     * Computed tabs are selections, not statuses. Callback tabs compare absolute moments
+     * with one server «now» for the list and the counters; any day, not only today. An old
+     * callback_at under a status that needs no callback counts for neither.
+     *
      * @param  Builder<Order>  $query
      * @return Builder<Order>
      */
-    private function applyTab(Builder $query, string $tab): Builder
+    private function applyTab(Builder $query, string $tab, CarbonImmutable $now): Builder
     {
-        return $tab === self::TAB_ALL ? $query : $query->where('orders.order_status_id', (int) $tab);
+        $callbackDue = fn (Builder $orders) => $orders
+            ->whereNotNull('orders.callback_at')
+            ->whereIn('orders.order_status_id', OrderStatus::query()->select('id')->where('requires_callback_at', true));
+
+        return match ($tab) {
+            self::TAB_ALL => $query,
+            self::TAB_URGENT => $callbackDue($query)->whereBetween('orders.callback_at', [$now, $now->addMinutes(self::URGENT_MINUTES)]),
+            self::TAB_OVERDUE => $callbackDue($query)->where('orders.callback_at', '<', $now),
+            self::TAB_MISSED => $query->whereExists(Call::query()->unhandledMissed()->whereColumn('calls.order_id', 'orders.id')->selectRaw('1')->toBase()),
+            default => $query->where('orders.order_status_id', (int) $tab),
+        };
+    }
+
+    /**
+     * What a computed tab adds to its row: seconds to the callback (negative once it is
+     * overdue) or the unhandled missed calls.
+     *
+     * @return array<string, mixed>
+     */
+    private function tabFacts(Order $order, string $tab, CarbonImmutable $now): array
+    {
+        return match ($tab) {
+            self::TAB_URGENT, self::TAB_OVERDUE => ['callback_in' => $order->callback_at === null ? null : (int) $now->diffInSeconds($order->callback_at, false)],
+            self::TAB_MISSED => [
+                'missed_count' => (int) $order->getAttribute('missed_count'),
+                'last_missed_at' => $order->getAttribute('last_missed_at') === null ? null : CarbonImmutable::parse($order->getAttribute('last_missed_at'))->toISOString(),
+            ],
+            default => [],
+        };
     }
 
     /**
@@ -242,6 +302,7 @@ class OrderController extends Controller
             'status' => $query->orderBy($related('order_statuses', 'sort_order', 'order_status_id'), $direction)
                 ->orderBy($related('order_statuses', 'name', 'order_status_id'), $direction),
             'responsible' => $query->orderBy($related('users', 'name', 'responsible_id'), $direction),
+            'last_missed_at' => $query->orderBy(Call::query()->unhandledMissed()->whereColumn('calls.order_id', 'orders.id')->selectRaw('max(calls.started_at)')->toBase(), $direction),
             default => $query->orderBy("orders.{$sort}", $direction),
         };
 
@@ -255,9 +316,15 @@ class OrderController extends Controller
      * @param  Collection<int, OrderStatus>  $statuses
      * @return list<array{key: string, label: string, color: string|null, count: int}>
      */
-    private function listTabs(Builder $base, Collection $statuses): array
+    private function listTabs(Builder $base, Collection $statuses, CarbonImmutable $now): array
     {
         $total = $base->clone()->toBase()->count();
+        $computed = fn (string $tab, string $label) => [
+            'key' => $tab,
+            'label' => $label,
+            'color' => null,
+            'count' => $this->applyTab($base->clone(), $tab, $now)->toBase()->count(),
+        ];
         $byStatus = $statuses->isEmpty() ? collect() : $base->clone()->toBase()
             ->whereIn('orders.order_status_id', $statuses->modelKeys())
             ->groupBy('orders.order_status_id')
@@ -272,6 +339,9 @@ class OrderController extends Controller
                 'color' => $status->color->value,
                 'count' => (int) ($byStatus[$status->id] ?? 0),
             ])->values()->all(),
+            $computed(self::TAB_URGENT, 'Срочные'),
+            $computed(self::TAB_OVERDUE, 'Просроченные'),
+            $computed(self::TAB_MISSED, 'Пропущенные'),
         ];
     }
 
@@ -478,6 +548,7 @@ class OrderController extends Controller
             'transferShowrooms' => fn () => $can['transfer'] ? $this->options($this->transfers->targets($model, $user)->orderBy('name')->get(['id', 'name', 'active'])) : [],
             'options' => fn () => $can['update'] ? $this->editOptions($model, $can['assign'], $user->can(P::ORDERS_ASSIGN_ANY)) : null,
             'comments' => Inertia::optional(fn () => $this->comments($request, $model)),
+            'missedCalls' => fn () => $this->missed->pending($model),
             'can' => $can,
         ];
 

@@ -76,6 +76,25 @@ export function useTableQuery(
                     setFailed(false);
                 },
                 onFinish: () => setIsLoading(false),
+                // The server may pick the order itself (a tab's default); show what it used.
+                onSuccess: (page) => {
+                    const applied = page.props.filters as
+                        | Partial<TableQueryState>
+                        | undefined;
+
+                    if (applied?.sort) {
+                        setQuery((current) =>
+                            current.sort === applied.sort &&
+                            current.direction === applied.direction
+                                ? current
+                                : {
+                                      ...current,
+                                      sort: applied.sort,
+                                      direction: applied.direction,
+                                  },
+                        );
+                    }
+                },
                 onHttpException: () => {
                     setFailed(true);
 
@@ -123,12 +142,14 @@ export function useTableQuery(
     );
 
     const setTab = useCallback(
-        (tab: string) => {
+        (tab: string, resetSort = false) => {
             if (tab === query.tab) {
                 return;
             }
 
-            const next = { ...query, tab };
+            const next = resetSort
+                ? { ...query, tab, sort: undefined, direction: undefined }
+                : { ...query, tab };
             setQuery(next);
             visit(next);
         },

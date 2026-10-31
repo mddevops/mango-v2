@@ -3,6 +3,7 @@
 use App\Http\Controllers\Distribution\DistributionController;
 use App\Http\Controllers\Orders\CallCardController;
 use App\Http\Controllers\Orders\CallRecordingController;
+use App\Http\Controllers\Orders\MissedCallController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderReasonController;
 use App\Http\Controllers\Orders\OrdersListPreferenceController;
@@ -109,6 +110,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('orders/{order}/comments', [OrderController::class, 'storeComment'])->whereNumber('order')->name('orders.comments.store');
     Route::post('orders/{order}/distribution', [DistributionController::class, 'distribute'])->whereNumber('order')->name('orders.distribute');
     Route::post('orders/{order}/take', [OrderController::class, 'take'])->whereNumber('order')->name('orders.take');
+    Route::post('orders/{order}/missed-calls/handle', [MissedCallController::class, 'handle'])->whereNumber('order')->name('orders.missed-calls.handle');
     Route::post('orders/{order}/transfer', [OrderController::class, 'transfer'])->whereNumber('order')->name('orders.transfer');
     Route::get('orders/{order}/recordings/{recording}/audio', [CallRecordingController::class, 'audio'])->whereNumber(['order', 'recording'])->middleware('throttle:120,1')->name('orders.recordings.audio');
     Route::post('orders/{order}/recordings/{recording}/play', [CallRecordingController::class, 'play'])->whereNumber(['order', 'recording'])->middleware('throttle:60,1')->name('orders.recordings.play');

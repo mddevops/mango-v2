@@ -67,11 +67,12 @@ import type {
 } from '@/hooks/use-table-query';
 import { postOrderAction } from '@/lib/order-actions';
 import {
+    callbackHint,
     formatBusinessDate,
     formatLocal,
     formatMoment,
 } from '@/lib/order-format';
-import { cn } from '@/lib/utils';
+import { cn, plural } from '@/lib/utils';
 import {
     distribute,
     index as ordersIndex,
@@ -147,6 +148,21 @@ const HIDDEN_BY_DEFAULT: ColumnVisibilityState = {
 
 const ACTIONS_COLUMN = 'actions';
 
+/** Shown only on «Пропущенные»; its id is the server sort of that tab. */
+const MISSED_COLUMN = 'last_missed_at';
+
+/** Selections computed by the server; each has its own default order. */
+const COMPUTED_TABS = ['urgent', 'overdue', 'missed'];
+
+const TAB_BADGES: Record<string, 'warning-light' | 'destructive-light'> = {
+    urgent: 'warning-light',
+    overdue: 'destructive-light',
+    missed: 'destructive-light',
+};
+
+/** «Срочные» turn into «Просроченные» by time alone: the open list is reread at most this often. */
+const REFRESH_MS = 60_000;
+
 /** Row actions stay the last column, pinned to the end, whatever else is pinned. */
 function withActionsLast(pinning: ColumnPinningState): ColumnPinningState {
     return {
@@ -207,12 +223,24 @@ export default function OrdersIndex({
     const columnVisibility = preferences.columns;
     const setView = (next: RegistryView) =>
         setPreferences({ ...preferences, view: next });
-    const setColumnVisibility = (next: ColumnVisibilityState) =>
-        setPreferences({ ...preferences, columns: next });
+    const activeTab = table.query.tab ?? 'all';
+    const computedTab = COMPUTED_TABS.includes(activeTab);
+    const setColumnVisibility = (next: ColumnVisibilityState) => {
+        const { [MISSED_COLUMN]: _missed, ...saved } = next;
+        setPreferences({ ...preferences, columns: saved });
+    };
+    // A computed tab sorts within itself; its order is not the saved default of the list.
     const setSort = (sort: string, direction: TableSortDirection) => {
         table.setSort(sort, direction);
-        setPreferences({ ...preferences, sort, direction });
+
+        if (!computedTab) {
+            setPreferences({ ...preferences, sort, direction });
+        }
     };
+    // Entering or leaving a computed tab drops the sort, so the server applies the
+    // tab's own default order (or the saved one of the list).
+    const setTab = (tab: string) =>
+        table.setTab(tab, computedTab || COMPUTED_TABS.includes(tab));
     const [creating, setCreating] = useState(false);
     const [transferring, setTransferring] = useState<OrderListRow | null>(
         null,
@@ -237,6 +265,45 @@ export default function OrdersIndex({
             refresh();
         }
     });
+
+    // One clock for the whole list: «Срочные» become «Просроченные» without any event.
+    // Fresh data from any source restarts it; a hidden browser tab waits, and coming
+    // back rereads the list once a minute has passed.
+    const lastLoaded = useRef(0);
+    const ticking = useRef(false);
+
+    useEffect(() => {
+        lastLoaded.current = Date.now();
+    }, [orders]);
+
+    useEffect(() => {
+        const tick = () => {
+            if (
+                document.visibilityState !== 'visible' ||
+                ticking.current ||
+                Date.now() - lastLoaded.current < REFRESH_MS
+            ) {
+                return;
+            }
+
+            ticking.current = true;
+            router.reload({
+                only: ONLY,
+                preserveUrl: true,
+                onFinish: () => {
+                    ticking.current = false;
+                    lastLoaded.current = Date.now();
+                },
+            });
+        };
+        const timer = setInterval(tick, REFRESH_MS / 4);
+        document.addEventListener('visibilitychange', tick);
+
+        return () => {
+            clearInterval(timer);
+            document.removeEventListener('visibilitychange', tick);
+        };
+    }, []);
 
     const pendingClick = useRef<{
         id: number;
@@ -393,6 +460,34 @@ export default function OrdersIndex({
 
     const columns = useMemo<ColumnDef<DataGridFeatures, OrderListRow>[]>(
         () => [
+            {
+                id: MISSED_COLUMN,
+                accessorKey: 'last_missed_at',
+                header: ({ column }) => (
+                    <DataGridColumnHeader
+                        column={column}
+                        title="Пропущенные"
+                    />
+                ),
+                meta: { headerTitle: 'Пропущенные' },
+                enableHiding: false,
+                size: 170,
+                cell: ({ row }) => (
+                    <span className="flex flex-col">
+                        <span className="text-sm font-medium">
+                            {plural(row.original.missed_count ?? 0, [
+                                'звонок',
+                                'звонка',
+                                'звонков',
+                            ])}
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                            последний{' '}
+                            {formatMoment(row.original.last_missed_at ?? null)}
+                        </span>
+                    </span>
+                ),
+            },
             {
                 id: 'source',
                 accessorKey: 'source',
@@ -585,8 +680,22 @@ export default function OrdersIndex({
                 meta: { headerTitle: 'Перезвонить' },
                 size: 160,
                 cell: ({ row }) => (
-                    <span className="tabular-nums">
-                        {formatLocal(row.original.callback_at)}
+                    <span className="flex flex-col">
+                        <span className="tabular-nums">
+                            {formatLocal(row.original.callback_at)}
+                        </span>
+                        {row.original.callback_in != null && (
+                            <span
+                                className={cn(
+                                    'text-xs',
+                                    row.original.callback_in < 0
+                                        ? 'text-destructive'
+                                        : 'text-muted-foreground',
+                                )}
+                            >
+                                {callbackHint(row.original.callback_in)}
+                            </span>
+                        )}
                     </span>
                 ),
             },
@@ -793,8 +902,33 @@ export default function OrdersIndex({
                 </div>
                 {(order.repeat_number > 0 ||
                     order.transferred_to ||
-                    order.transferred_from) && (
+                    order.transferred_from ||
+                    order.callback_in != null ||
+                    (order.missed_count ?? 0) > 0) && (
                     <div className="flex max-w-[60%] min-w-0 flex-wrap items-center justify-end gap-1.5">
+                        {order.callback_in != null && (
+                            <Badge
+                                variant={
+                                    order.callback_in < 0
+                                        ? 'destructive-light'
+                                        : 'warning-light'
+                                }
+                                className="max-w-full truncate"
+                                title={formatLocal(order.callback_at)}
+                            >
+                                {callbackHint(order.callback_in)}
+                            </Badge>
+                        )}
+                        {(order.missed_count ?? 0) > 0 && (
+                            <Badge
+                                variant="destructive-light"
+                                className="max-w-full truncate"
+                                title={`Последний: ${formatMoment(order.last_missed_at ?? null)}`}
+                            >
+                                Пропущено:{' '}
+                                {order.missed_count?.toLocaleString('ru-RU')}
+                            </Badge>
+                        )}
                         <OrderRepeatBadge count={order.repeat_number} />
                         {order.transferred_to && (
                             <Badge
@@ -846,8 +980,6 @@ export default function OrdersIndex({
         </Card>
     );
 
-    const activeTab = table.query.tab ?? 'all';
-
     return (
         <>
             <Head title="Заявки" />
@@ -878,7 +1010,7 @@ export default function OrdersIndex({
                     }
                     tabs={
                         <div className="overflow-x-auto border-b px-(--frame-panel-header-px) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                            <Tabs value={activeTab} onValueChange={table.setTab}>
+                            <Tabs value={activeTab} onValueChange={setTab}>
                                 <TabsList
                                     variant="line"
                                     className="h-auto w-max gap-6 p-0"
@@ -902,7 +1034,10 @@ export default function OrdersIndex({
                                                 </OrderStatusBadge>
                                             ) : (
                                                 <Badge
-                                                    variant="secondary"
+                                                    variant={
+                                                        TAB_BADGES[tab.key] ??
+                                                        'secondary'
+                                                    }
                                                     radius="full"
                                                     className="tabular-nums"
                                                 >
@@ -949,7 +1084,10 @@ export default function OrdersIndex({
                         },
                     }}
                     columnVisibility={{
-                        state: columnVisibility,
+                        state: {
+                            ...columnVisibility,
+                            [MISSED_COLUMN]: activeTab === 'missed',
+                        },
                         onChange: setColumnVisibility,
                     }}
                     columnLayout={{

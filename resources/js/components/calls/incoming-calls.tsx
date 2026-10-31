@@ -50,11 +50,13 @@ async function fetchCard(callId: number): Promise<CallCardData | null> {
 }
 
 /**
- * Incoming call cards at the bottom right. Signals give only the call id, state and
+ * Incoming call cards at the bottom right, one per Mango call (call id = connection +
+ * entry_id), never per order: every new call of the same order gets its own card, and
+ * further signals of a call update its card. Signals give only the call id, state and
  * version; the data comes from the server, which checks access to the order every time.
- * A finished call stays on its final state and hides after 15 s; a card hidden by the
- * employee does not come back in this tab. A call that was already over when its first
- * signal came is not shown.
+ * A finished call stays on its final state and hides after 15 s (a call already over
+ * when its first signal came is shown that way too); a card hidden by the employee does
+ * not come back for that call in this tab. Stale calls get no signal from the server.
  */
 export function IncomingCalls() {
     const [cards, setCards] = useState<CallCardData[]>([]);
@@ -117,7 +119,7 @@ export function IncomingCalls() {
         }
     };
 
-    const load = async (callId: number, showFinal: boolean) => {
+    const load = async (callId: number) => {
         const request = (requests.current.get(callId) ?? 0) + 1;
         requests.current.set(callId, request);
 
@@ -140,11 +142,6 @@ export function IncomingCalls() {
         }
 
         const existing = current.current.find((card) => card.call_id === callId);
-
-        if (!existing && !showFinal && isFinal(data.state)) {
-            return;
-        }
-
         const state =
             existing && isFinal(existing.state) && !isFinal(data.state)
                 ? existing.state
@@ -167,28 +164,23 @@ export function IncomingCalls() {
     const refresh = (filter: (card: CallCardData) => boolean) => {
         current.current
             .filter(filter)
-            .forEach((card) => void load(card.call_id, true));
+            .forEach((card) => void load(card.call_id));
     };
 
     useRealtimeSignal((signal) => {
         switch (signal.type) {
-            case 'call.card': {
+            case 'call.card':
                 if (hiddenSet().has(signal.call_id)) {
                     return;
                 }
 
-                const shown = current.current.some(
-                    (card) => card.call_id === signal.call_id,
-                );
-
                 if (signal.state === 'revoked') {
                     remove(signal.call_id);
-                } else if (shown || !isFinal(signal.state)) {
-                    void load(signal.call_id, shown);
+                } else {
+                    void load(signal.call_id);
                 }
 
                 return;
-            }
             case 'order.updated':
             case 'order.access-check':
                 refresh((card) => card.order_id === signal.order_id);

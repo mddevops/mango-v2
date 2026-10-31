@@ -58,6 +58,19 @@ class RealtimePublisher
         $this->publish(...$signals);
     }
 
+    /**
+     * The order's lists changed without a change of the order itself: a missed call came
+     * or was handled. The version stays the order's own.
+     */
+    public function orderTouched(int $orderId): void
+    {
+        $version = Order::query()->whereKey($orderId)->value('lock_version');
+
+        if ($version !== null) {
+            $this->publish(new OrderChanged($orderId, (int) $version));
+        }
+    }
+
     public function callChanged(int $callId): void
     {
         $this->publish(new CallChanged($callId, $this->clock()));

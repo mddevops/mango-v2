@@ -73,6 +73,18 @@ export type OrderListRow = OrderRow & {
     /** The latest comments, newest first; `comments_count` counts all of them. */
     comments: OrderComment[];
     comments_count: number;
+    /** «Срочные», «Просроченные»: seconds to the callback by the server's clock, negative when overdue. */
+    callback_in?: number | null;
+    /** «Пропущенные»: unhandled missed calls and the latest of them. */
+    missed_count?: number;
+    last_missed_at?: string | null;
+};
+
+export type OrderMissedCall = {
+    id: number;
+    started_at: string | null;
+    source: string | null;
+    line: string | null;
 };
 
 export type OrderTransferInfo = {

@@ -288,6 +288,58 @@ class RealtimeSignalsTest extends TestCase
         $this->assertSame([[$other->id, 'revoked'], [$other->id, 'revoked']], $this->cards());
     }
 
+    public function test_every_new_call_of_an_existing_order_gets_its_own_card_and_a_repeated_event_updates_it(): void
+    {
+        $this->captureSignals();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 12:05', 'Europe/Moscow'));
+        $connection = $this->mangoConnection($this->showroom);
+        $this->bindLine($connection, $this->makeSource($this->showroom), self::LINE);
+        $operator = $this->mangoEmployee('Оператор', [$this->showroom]);
+        $this->extension($connection, '123', $operator);
+
+        foreach (['entry-1' => 0, 'entry-2' => 300, 'entry-3' => 600] as $entry => $offset) {
+            foreach ($this->routedCall($entry, '123', $offset) as $event) {
+                $this->mangoEvent($connection, 'call', $event)->assertOk();
+            }
+        }
+
+        $calls = Call::query()->orderBy('id')->get();
+        $this->assertCount(3, $calls);
+        $this->assertCount(1, $calls->pluck('order_id')->unique());
+
+        $byCall = collect($this->delivered)->where('type', 'call.card')->groupBy(fn (array $card) => $card['payload']['call_id']);
+        $this->assertSame($calls->pluck('id')->all(), $byCall->keys()->all());
+        $this->assertSame(['revoked', 'talking', 'ended'], $byCall[$calls[0]->id]->pluck('payload.state')->all());
+        $this->assertSame(['ringing', 'talking', 'ended'], $byCall[$calls[1]->id]->pluck('payload.state')->all());
+        $this->assertSame(['ringing', 'talking', 'ended'], $byCall[$calls[2]->id]->pluck('payload.state')->all());
+
+        // The same event delivered again belongs to the same call: no new call, and no
+        // card of another call.
+        $this->delivered = [];
+        $this->mangoEvent($connection, 'call', $this->routedCall('entry-3', '123', 600)[2])->assertOk();
+
+        $this->assertSame(3, Call::query()->count());
+        $this->assertSame([], array_diff(collect($this->delivered)->where('type', 'call.card')->pluck('payload.call_id')->all(), [$calls[2]->id]));
+
+        // A call whose events are processed long after it happened raises no card.
+        $this->delivered = [];
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 14:00', 'Europe/Moscow'));
+
+        foreach ($this->routedCall('entry-4', '123', 900) as $event) {
+            $this->mangoEvent($connection, 'call', $event)->assertOk();
+        }
+
+        $this->assertSame([], $this->cards());
+        $this->assertNotEmpty($this->signals('call.updated')->all());
+
+        // A fresh call known only from Mango's summary still gets its own (final) card.
+        $this->delivered = [];
+        $this->mangoEvent($connection, 'summary', $this->summary('entry-5', '123', 7200))->assertOk();
+
+        $this->assertSame([[$operator->id, 'ended']], $this->cards());
+        $this->assertSame($calls[0]->order_id, Call::query()->where('entry_id', 'entry-5')->value('order_id'));
+    }
+
     public function test_the_call_card_data_is_given_only_to_an_addressed_employee_who_may_open_the_order(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-19 12:05', 'Europe/Moscow'));

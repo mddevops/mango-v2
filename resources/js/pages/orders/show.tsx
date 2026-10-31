@@ -25,6 +25,7 @@ import {
     phonesPayload,
     toPhoneRows,
 } from '@/components/orders/order-phones-field';
+import { MissedCallsSection } from '@/components/orders/missed-calls-section';
 import { OrderRepeatBadge } from '@/components/orders/order-repeat-badge';
 import {
     OrderStatusBadge,
@@ -74,6 +75,7 @@ import type {
     OrderComment,
     OrderEditOptions,
     OrderHistoryEntry,
+    OrderMissedCall,
     OrderSiteRequest,
     OrderTransferInfo,
     Paginated,
@@ -89,6 +91,7 @@ type Props = {
     crossShowroom?: RelatedOrder[];
     history?: Paginated<OrderHistoryEntry>;
     calls?: Paginated<OrderCall>;
+    missedCalls: OrderMissedCall[];
     can: {
         update: boolean;
         assign: boolean;
@@ -1155,6 +1158,7 @@ export default function OrderShow({
     crossShowroom,
     history,
     calls,
+    missedCalls,
     can,
     transferShowrooms,
 }: Props) {
@@ -1171,6 +1175,9 @@ export default function OrderShow({
         router.reload({ only: SAVED_PROPS }),
     );
     const reloadCalls = useCoalesced(() => router.reload({ only: ['calls'] }));
+    const reloadMissed = useCoalesced(() =>
+        router.reload({ only: ['missedCalls'] }),
+    );
 
     const visible = async (): Promise<boolean> => {
         try {
@@ -1200,10 +1207,14 @@ export default function OrderShow({
     useRealtimeSignal((signal) => {
         switch (signal.type) {
             case 'order.updated':
-                if (
-                    signal.order_id !== order.id ||
-                    signal.version <= order.lock_version
-                ) {
+                if (signal.order_id !== order.id) {
+                    return;
+                }
+
+                // A missed call coming or handled leaves the order's version as is.
+                reloadMissed();
+
+                if (signal.version <= order.lock_version) {
                     return;
                 }
 
@@ -1235,6 +1246,8 @@ export default function OrderShow({
                     if (!editing.current) {
                         reloadCard();
                     }
+
+                    reloadMissed();
 
                     if (callsLoaded) {
                         reloadCalls();
@@ -1343,6 +1356,12 @@ export default function OrderShow({
                         </Fact>
                     </div>
                 </FormSection>
+
+                <MissedCallsSection
+                    orderId={order.id}
+                    calls={missedCalls}
+                    canHandle={can.update}
+                />
 
                 {order.site_request && (
                     <SiteRequestSection request={order.site_request} />

@@ -49,6 +49,9 @@ class MangoCallService
     /** A concurrent call of the same client won one of these: the transaction is repeated. */
     private const RETRY_INDEXES = ['client_phones_phone_unique', 'orders_client_showroom_repeat_unique'];
 
+    /** An event older than this raises no incoming call card. */
+    private const CARD_FRESH_MINUTES = 15;
+
     public function __construct(
         private readonly OrderManager $orders,
         private readonly AuditLogger $audit,
@@ -72,6 +75,10 @@ class MangoCallService
                 $locked = Call::query()->lockForUpdate()->findOrFail($call->id);
                 $this->settle($locked, $locked->connection()->firstOrFail());
                 $this->realtime->callChanged($locked->id);
+
+                if ($locked->order_id !== null && $locked->wasChanged('order_id')) {
+                    $this->realtime->orderTouched($locked->order_id);
+                }
 
                 return $locked;
             }));
@@ -163,19 +170,26 @@ class MangoCallService
         }
 
         $this->settle($call, $connection);
-        $this->announce($call);
+        $this->announce($call, $moment);
     }
 
     /**
      * Realtime signals of the event, sent after commit: the call changed, and the
      * incoming call card of every employee the call is addressed to (by the extensions
-     * in its legs). Whether he may see the card is decided when the signal is sent.
+     * in its legs). Whether he may see the card is decided when the signal is sent. An
+     * event processed long after it happened (a retry) raises no card.
      */
-    private function announce(Call $call): void
+    private function announce(Call $call, ?CarbonImmutable $moment): void
     {
         $this->realtime->callChanged($call->id);
 
-        if ($call->direction !== CallDirection::Inbound || $call->technical || $call->order_id === null) {
+        // A confirmed missed call (or a call newly linked) changes the order's lists.
+        if ($call->order_id !== null && ($call->wasChanged('result') || $call->wasChanged('order_id'))) {
+            $this->realtime->orderTouched($call->order_id);
+        }
+
+        if ($call->direction !== CallDirection::Inbound || $call->technical || $call->order_id === null
+            || $moment?->lessThan(CarbonImmutable::now()->subMinutes(self::CARD_FRESH_MINUTES))) {
             return;
         }
 
