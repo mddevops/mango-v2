@@ -26,7 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureUserIsActive::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
-            AddLinkHeadersForPreloadedAssets::class,
+            AddLinkHeadersForPreloadedAssets::using(10),
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
