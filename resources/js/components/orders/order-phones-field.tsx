@@ -1,10 +1,22 @@
-import { Plus, X } from 'lucide-react';
+import { EllipsisVertical, Mail, Phone, Plus, X } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 import { useState } from 'react';
 import { Badge } from '@/components/reui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupInput,
+} from '@/components/ui/input-group';
 import {
     Popover,
     PopoverContent,
@@ -61,6 +73,63 @@ export function RuPhoneInput({
             onChange={(event) => onValueChange(formatRuPhone(event.target.value))}
             {...props}
         />
+    );
+}
+
+/** A phone input with a menu to call or text the number once it is complete. */
+function PhoneActionsInput({
+    value,
+    onValueChange,
+    ...props
+}: Omit<ComponentProps<'input'>, 'value' | 'onChange' | 'type'> & {
+    value: string;
+    onValueChange: (value: string) => void;
+}) {
+    const complete = isCompleteRuPhone(value);
+    const digits = value.replace(/\D/g, '');
+
+    return (
+        <InputGroup className="min-w-0 flex-1">
+            <InputGroupInput
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                placeholder={RU_PHONE_PLACEHOLDER}
+                maxLength={18}
+                value={value}
+                onChange={(event) =>
+                    onValueChange(formatRuPhone(event.target.value))
+                }
+                {...props}
+            />
+            <InputGroupAddon align="inline-end">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <InputGroupButton
+                            size="icon-xs"
+                            disabled={!complete}
+                            aria-label="Действия с номером"
+                        >
+                            <EllipsisVertical />
+                        </InputGroupButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem asChild>
+                            <a href={`tel:+${digits}`}>
+                                <Phone />
+                                Позвонить
+                            </a>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                            <a href={`sms:+${digits}`}>
+                                <Mail />
+                                Отправить SMS
+                            </a>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </InputGroupAddon>
+        </InputGroup>
     );
 }
 
@@ -192,13 +261,12 @@ export function OrderPhonesField({
                                 }
                             />
                             <div className="flex min-w-0 items-center gap-2">
-                            <RuPhoneInput
+                            <PhoneActionsInput
                                 aria-label={`Номер ${index + 1}`}
                                 value={row.number}
                                 onValueChange={(number) =>
                                     updateExtra(index, { number })
                                 }
-                                className="min-w-0 flex-1"
                                 aria-invalid={
                                     extraError(index, 'number')
                                         ? true

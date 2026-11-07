@@ -1,8 +1,61 @@
-import { Breadcrumbs } from '@/components/breadcrumbs';
-import { HeaderUserActions } from '@/components/header-user-actions';
-import { Separator } from '@/components/ui/separator';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Link } from '@inertiajs/react';
+import { Fragment } from 'react';
+import { MenuToggle } from '@/components/app-sidebar';
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
+
+/** Parents show from `md`; on narrow screens only the page stays. */
+function PageBreadcrumb({
+    breadcrumbs,
+}: {
+    breadcrumbs: BreadcrumbItemType[];
+}) {
+    if (breadcrumbs.length === 0) {
+        return null;
+    }
+
+    return (
+        <Breadcrumb className="min-w-0">
+            <BreadcrumbList className="flex-nowrap">
+                {breadcrumbs.map((item, index) => {
+                    const isLast = index === breadcrumbs.length - 1;
+
+                    return (
+                        <Fragment key={index}>
+                            {index > 0 && (
+                                <BreadcrumbSeparator className="hidden items-center md:flex">
+                                    <span className="inline-flex h-0.5 w-2 shrink-0 rounded-full bg-foreground/30" />
+                                </BreadcrumbSeparator>
+                            )}
+                            {isLast ? (
+                                <BreadcrumbItem className="min-w-0">
+                                    <BreadcrumbPage className="truncate">
+                                        {item.title}
+                                    </BreadcrumbPage>
+                                </BreadcrumbItem>
+                            ) : (
+                                <BreadcrumbItem className="hidden md:inline-flex">
+                                    <BreadcrumbLink asChild>
+                                        <Link href={item.href}>
+                                            {item.title}
+                                        </Link>
+                                    </BreadcrumbLink>
+                                </BreadcrumbItem>
+                            )}
+                        </Fragment>
+                    );
+                })}
+            </BreadcrumbList>
+        </Breadcrumb>
+    );
+}
 
 export function AppSidebarHeader({
     breadcrumbs = [],
@@ -10,14 +63,11 @@ export function AppSidebarHeader({
     breadcrumbs?: BreadcrumbItemType[];
 }) {
     return (
-        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border/60 bg-background/95 px-4 backdrop-blur-sm">
-            <SidebarTrigger className="-ml-1 md:hidden" />
-            <Separator
-                orientation="vertical"
-                className="mr-2 data-vertical:h-4 data-vertical:self-auto md:hidden"
-            />
-            <Breadcrumbs breadcrumbs={breadcrumbs} />
-            <HeaderUserActions />
+        <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b px-4">
+            <div className="flex min-w-0 items-center gap-2">
+                <MenuToggle className="-ml-1" />
+                <PageBreadcrumb breadcrumbs={breadcrumbs} />
+            </div>
         </header>
     );
 }

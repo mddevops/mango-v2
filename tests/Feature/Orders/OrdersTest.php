@@ -5,6 +5,7 @@ namespace Tests\Feature\Orders;
 use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\ClientPhone;
+use App\Models\ContactChannel;
 use App\Models\Order;
 use App\Models\OrderComment;
 use App\Models\OrderStatus;
@@ -13,6 +14,7 @@ use App\Models\Role;
 use App\Models\Showroom;
 use App\Models\Source;
 use App\Models\User;
+use App\Policies\OrderPolicy;
 use App\Services\OrderManager;
 use App\Support\Phone;
 use App\Support\PermissionCatalog as P;
@@ -114,7 +116,7 @@ class OrdersTest extends TestCase
         $employee = $this->worker([$own]);
 
         $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($foreignSource, ['showroom_id' => $own->id]))->assertSessionHasErrors('source_id');
-        $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($foreignSource, ['showroom_id' => null]))->assertSessionHasErrors('source_id');
+        $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($foreignSource, ['showroom_id' => null]))->assertSessionHasErrors('showroom_id');
         $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($inactive))->assertSessionHasErrors('source_id');
         $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($source, ['contact_channel_id' => $this->channels('direct-call')[0]]))->assertSessionHasErrors('contact_channel_id');
         $this->actingAs($employee)->post(route('orders.store'), $this->createPayload($source, ['showroom_id' => $foreign->id]))->assertSessionHasErrors('showroom_id');
@@ -144,16 +146,25 @@ class OrdersTest extends TestCase
                 ->where('can.create', true)
                 ->where('createForm.showrooms', [['id' => $own->id, 'name' => $own->name, 'active' => true]])
                 ->where('createForm.choices.sources', fn ($list) => collect($list)->pluck('id')->all() === [$ownSource->id]));
-        $this->createOrder($single, $ownSource, ['showroom_id' => null]);
+        $this->createOrder($single, $ownSource);
         $this->assertSame($own->id, Order::query()->latest('id')->value('showroom_id'));
-        $this->actingAs($single)->post(route('orders.store'), $this->createPayload($secondSource, ['showroom_id' => null]))->assertSessionHasErrors('source_id');
+        $this->actingAs($single)->post(route('orders.store'), $this->createPayload($ownSource, ['showroom_id' => null]))
+            ->assertSessionHasErrors('showroom_id');
+        $this->actingAs($single)->post(route('orders.store'), $this->createPayload($secondSource, ['showroom_id' => $own->id]))
+            ->assertSessionHasErrors('source_id');
 
         $this->actingAs($multi)->get(route('orders.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where('createForm.showrooms', fn ($list) => collect($list)->pluck('id')->sort()->values()->all() === collect([$own->id, $second->id])->sort()->values()->all())
                 ->where('createForm.choices', null));
-        $this->actingAs($multi)->getJson(route('orders.create-sources', ['showroom_id' => $own->id]))
-            ->assertOk()->assertJsonPath('sources.*.id', [$ownSource->id]);
+        $channels = $this->actingAs($multi)->getJson(route('orders.create-sources', ['showroom_id' => $own->id]))
+            ->assertOk()->assertJsonPath('sources.*.id', [$ownSource->id])
+            ->json('sources.0.channels');
+        $this->assertCount(2, $channels);
+        $this->assertSame(
+            [ContactChannel::query()->where('code', ContactChannel::CALLBACK)->value('id')],
+            collect($channels)->where('preferred', true)->pluck('id')->values()->all(),
+        );
         $this->actingAs($multi)->getJson(route('orders.create-sources', ['showroom_id' => $foreign->id]))->assertNotFound();
         $this->actingAs($single)->getJson(route('orders.create-sources', ['showroom_id' => $second->id]))->assertNotFound();
 
@@ -338,12 +349,12 @@ class OrdersTest extends TestCase
         $this->actingAs($employee)->get(route('orders.index', ['sort' => 'password', 'direction' => 'sideways']))
             ->assertInertia(fn (Assert $page) => $page->has('orders.data', 3)->where('filters.sort', 'received_at')->where('filters.direction', 'desc'));
 
-        $defaults = ['view' => 'table', 'filters' => true, 'columns' => null, 'order' => null, 'pinning' => ['start' => [], 'end' => []], 'sort' => null, 'direction' => null];
+        $defaults = ['view' => 'table', 'density' => 'default', 'filters' => true, 'columns' => null, 'order' => null, 'pinning' => ['start' => [], 'end' => []], 'sort' => null, 'direction' => null];
         $this->actingAs($employee)->get(route('orders.index'))
             ->assertInertia(fn (Assert $page) => $page->where('listPreferences', $defaults));
 
         $saved = [
-            'view' => 'cards', 'filters' => false, 'columns' => ['showroom' => true, 'phone' => false],
+            'view' => 'cards', 'density' => 'compact', 'filters' => false, 'columns' => ['showroom' => true, 'phone' => false],
             'order' => ['phone', 'contact_name'], 'pinning' => ['start' => ['phone'], 'end' => ['actions']],
             'sort' => 'contact_name', 'direction' => 'asc',
         ];
@@ -417,7 +428,8 @@ class OrdersTest extends TestCase
         $this->assertSame($colleague->id, $this->createOrder($local, $source, ['responsible_id' => $colleague->id])->responsible_id);
         $this->actingAs($local)->post(route('orders.store'), $this->createPayload($source, ['responsible_id' => $stranger->id]))
             ->assertSessionHasErrors(['responsible_id' => OrderManager::RESPONSIBLE_INVALID]);
-        $this->assertNull($this->createOrder($local, $source, ['responsible_id' => null])->responsible_id);
+        $this->actingAs($local)->post(route('orders.store'), $this->createPayload($source, ['responsible_id' => null]))
+            ->assertSessionHasErrors('responsible_id');
 
         $this->assertSame($stranger->id, $this->createOrder($chief, $source, ['responsible_id' => $stranger->id])->responsible_id);
 
@@ -426,7 +438,9 @@ class OrdersTest extends TestCase
                 ->where('createForm.responsibles', fn ($list) => collect($list)->pluck('name')->contains('Коллега') && ! collect($list)->pluck('name')->contains('Из другого салона')));
         $this->actingAs($chief)->get(route('orders.index'))
             ->assertInertia(fn (Assert $page) => $page
-                ->where('createForm.responsibles', fn ($list) => collect($list)->pluck('name')->contains('Из другого салона')));
+                ->where('createForm.responsibles', fn ($list) => collect($list)->contains(
+                    fn ($row) => $row['name'] === 'Из другого салона' && $row['showroom_ids'] === [$other->id],
+                )));
         $this->actingAs($operator)->get(route('orders.index'))
             ->assertInertia(fn (Assert $page) => $page->where('createForm.responsibles', null));
     }
@@ -742,6 +756,10 @@ class OrdersTest extends TestCase
 
     private function createOrder(User $actor, Source $source, array $overrides = []): Order
     {
+        if (OrderPolicy::canAssign($actor) && ! array_key_exists('responsible_id', $overrides)) {
+            $overrides['responsible_id'] = $actor->id;
+        }
+
         $this->actingAs($actor)->post(route('orders.store'), $this->createPayload($source, $overrides))->assertSessionHasNoErrors();
 
         return Order::query()->latest('id')->firstOrFail();

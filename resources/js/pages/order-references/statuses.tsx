@@ -41,6 +41,7 @@ function requirements(row: OrderStatusRow, reasonTypes: Option[]): string[] {
     return [
         ...(row.requires_callback_at ? ['Дата перезвона'] : []),
         ...(row.requires_arrival_at ? ['Дата приезда'] : []),
+        ...(row.requires_visit_result ? ['Итог визита'] : []),
         ...(row.required_reason
             ? [
                   reasonTypes.find(

@@ -18,7 +18,7 @@ class StatusRequest extends FormRequest
             'users.global-access' => (bool) $user?->can('grantGlobalAccess', $this->route('user')),
             'sources.status' => (bool) $user?->can('update', $this->route('source')),
             'source-references.status' => (bool) $user?->can('source-references.manage'),
-            'order-statuses.status', 'order-reasons.status' => (bool) $user?->can('order-references.manage'),
+            'order-statuses.status', 'order-reasons.status', 'payment-methods.status', 'visit-results.status' => (bool) $user?->can('order-references.manage'),
             'connections.status' => (bool) $user?->can('update', $this->route('connection')),
             default => false,
         };

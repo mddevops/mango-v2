@@ -11,7 +11,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * @phpstan-type OrderStatusData array{name: string, description: string|null, color: string, show_as_tab?: bool, requires_callback_at: bool, requires_arrival_at: bool, required_reason: string|null}
+ * @phpstan-type OrderStatusData array{name: string, description: string|null, color: string, show_as_tab?: bool, requires_callback_at: bool, requires_arrival_at: bool, requires_visit_result?: bool, required_reason: string|null}
  */
 class OrderStatusRequest extends FormRequest
 {
@@ -29,6 +29,7 @@ class OrderStatusRequest extends FormRequest
             ...($this->has('show_as_tab') ? ['show_as_tab' => $this->boolean('show_as_tab')] : []),
             'requires_callback_at' => $this->boolean('requires_callback_at'),
             'requires_arrival_at' => $this->boolean('requires_arrival_at'),
+            ...($this->has('requires_visit_result') ? ['requires_visit_result' => $this->boolean('requires_visit_result')] : []),
             'required_reason' => $this->nullableText('required_reason'),
         ];
     }
@@ -71,6 +72,7 @@ class OrderStatusRequest extends FormRequest
             'show_as_tab' => ['sometimes', 'boolean'],
             'requires_callback_at' => ['required', 'boolean'],
             'requires_arrival_at' => ['required', 'boolean'],
+            'requires_visit_result' => ['sometimes', 'boolean'],
             'required_reason' => ['nullable', Rule::enum(OrderReasonType::class)],
         ];
 
@@ -93,6 +95,7 @@ class OrderStatusRequest extends FormRequest
             'show_as_tab' => 'вкладка в списке заявок',
             'requires_callback_at' => 'требование даты перезвона',
             'requires_arrival_at' => 'требование даты приезда',
+            'requires_visit_result' => 'требование итога визита',
             'required_reason' => 'справочник причин',
         ];
     }

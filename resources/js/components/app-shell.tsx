@@ -1,7 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import type { ReactNode } from 'react';
+import { AppModuleProvider, LAYOUT_SIZES } from '@/components/app-sidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
 import type { AppVariant } from '@/types';
 
 type Props = {
@@ -21,14 +21,10 @@ export function AppShell({ children, variant = 'sidebar' }: Props) {
     return (
         <SidebarProvider
             defaultOpen={isOpen}
-            className={cn(
-                'h-svh bg-muted',
-                '[&_[data-sidebar=menu-button]:hover]:bg-sidebar-accent/80 [&_[data-sidebar=menu-button]:hover]:text-foreground [&_[data-sidebar=menu-button]:hover]:ring-1 [&_[data-sidebar=menu-button]:hover]:ring-border/60 [&_[data-sidebar=menu-button]:hover]:ring-inset',
-                '[&_[data-sidebar=menu-button][data-active=true]]:bg-sidebar-accent [&_[data-sidebar=menu-button][data-active=true]]:text-foreground [&_[data-sidebar=menu-button][data-active=true]]:ring-1 [&_[data-sidebar=menu-button][data-active=true]]:ring-border/60 [&_[data-sidebar=menu-button][data-active=true]]:ring-inset [&_[data-sidebar=menu-button][data-active=true]>svg]:text-primary',
-            )}
-            style={{ '--sidebar-width': '255px' } as React.CSSProperties}
+            className="h-svh min-h-0 bg-muted [--header-height:48px]"
+            style={LAYOUT_SIZES}
         >
-            {children}
+            <AppModuleProvider>{children}</AppModuleProvider>
         </SidebarProvider>
     );
 }

@@ -94,6 +94,9 @@ function OrderCreateFields({
     const [failure, setFailure] = useState<string | null>(null);
     const {
         showrooms,
+        paymentMethods,
+        visitResults,
+        defaultPaymentMethodId,
         statuses,
         initialStatusId,
         reasonTitles,
@@ -122,20 +125,26 @@ function OrderCreateFields({
     const defaultResponsible = (showroomId: number | undefined) =>
         candidatesFor(showroomId).some((user) => user.id === selfId)
             ? String(selfId)
-            : NONE;
+            : '';
 
     const form = useForm({
         showroom_id: single ? String(single.id) : '',
         source_id: '',
         contact_channel_id: '',
+        payment_method_id:
+            defaultPaymentMethodId === null
+                ? ''
+                : String(defaultPaymentMethodId),
         contact_name: '',
         phones: [{ number: '', name: '' }] as PhoneRow[],
-        order_status_id: initialStatusId === null ? '' : String(initialStatusId),
+        order_status_id:
+            initialStatusId === null ? '' : String(initialStatusId),
         responsible_id: defaultResponsible(single?.id),
         reason_id: '',
         reason_comment: '',
         callback_at: '',
         arrival_at: '',
+        visit_result_id: '',
         comment: '',
     });
 
@@ -143,7 +152,9 @@ function OrderCreateFields({
 
     const errors = form.errors as Record<string, string | undefined>;
     const showroomId =
-        form.data.showroom_id === '' ? undefined : Number(form.data.showroom_id);
+        form.data.showroom_id === ''
+            ? undefined
+            : Number(form.data.showroom_id);
     const source = sources?.find(
         (item) => String(item.id) === form.data.source_id,
     );
@@ -194,24 +205,32 @@ function OrderCreateFields({
 
     const chooseSource = (value: string) => {
         const next = sources?.find((item) => String(item.id) === value);
+        const channel =
+            next?.channels.find((item) => item.preferred) ??
+            (next?.channels.length === 1 ? next.channels[0] : undefined);
 
         form.setData((data) => ({
             ...data,
             source_id: value,
-            contact_channel_id:
-                next?.channels.length === 1
-                    ? String(next.channels[0].id)
-                    : '',
+            contact_channel_id: channel ? String(channel.id) : '',
         }));
     };
 
-    const chooseStatus = (value: string) =>
+    const chooseStatus = (value: string) => {
+        const next = statuses.find((item) => String(item.id) === value);
+
         form.setData((data) => ({
             ...data,
             order_status_id: value,
             reason_id: '',
             reason_comment: '',
+            callback_at: next?.requires_callback_at ? data.callback_at : '',
+            arrival_at: next?.requires_arrival_at ? data.arrival_at : '',
+            visit_result_id: next?.requires_visit_result
+                ? data.visit_result_id
+                : '',
         }));
+    };
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -221,19 +240,17 @@ function OrderCreateFields({
         }
 
         form.transform((data) => ({
-            ...(single
-                ? {}
-                : {
-                      showroom_id:
-                          data.showroom_id === ''
-                              ? null
-                              : Number(data.showroom_id),
-                  }),
+            showroom_id:
+                data.showroom_id === '' ? null : Number(data.showroom_id),
             source_id: data.source_id === '' ? null : Number(data.source_id),
             contact_channel_id:
                 data.contact_channel_id === ''
                     ? null
                     : Number(data.contact_channel_id),
+            payment_method_id:
+                data.payment_method_id === ''
+                    ? null
+                    : Number(data.payment_method_id),
             contact_name: data.contact_name || null,
             phones: phonesPayload(data.phones),
             order_status_id:
@@ -244,10 +261,15 @@ function OrderCreateFields({
             reason_comment: data.reason_comment || null,
             callback_at: data.callback_at || null,
             arrival_at: data.arrival_at || null,
+            visit_result_id:
+                data.visit_result_id === ''
+                    ? null
+                    : Number(data.visit_result_id),
             ...(canComment ? { comment: data.comment || null } : {}),
             ...(responsibles
                 ? {
                       responsible_id:
+                          data.responsible_id === '' ||
                           data.responsible_id === NONE
                               ? null
                               : Number(data.responsible_id),
@@ -272,7 +294,10 @@ function OrderCreateFields({
             noValidate
         >
             <DialogHeader className="shrink-0 flex-row items-center gap-3 p-4 pe-12">
-                <IconStack aria-hidden="true" className="h-12 w-11 shrink-0 text-success">
+                <IconStack
+                    aria-hidden="true"
+                    className="h-12 w-11 shrink-0 text-success"
+                >
                     <SparklesIcon className="size-4 text-success" />
                 </IconStack>
                 <div className="flex flex-col gap-1">
@@ -284,77 +309,196 @@ function OrderCreateFields({
             </DialogHeader>
 
             <div className="me-0.5 flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 pb-4 [scrollbar-color:rgb(120_120_120/0.4)_transparent] [scrollbar-width:thin]">
-            <FormAlert failure={failure} />
+                <FormAlert failure={failure} />
 
-            {sources?.length === 0 && (
-                <Alert variant="info">
-                    <AlertDescription>
-                        В выбранном салоне нет активных источников.
-                    </AlertDescription>
-                </Alert>
-            )}
+                {sources?.length === 0 && (
+                    <Alert variant="info">
+                        <AlertDescription>
+                            В выбранном салоне нет активных источников.
+                        </AlertDescription>
+                    </Alert>
+                )}
 
-            {choicesFailed && (
-                <Alert variant="destructive">
-                    <AlertDescription>
-                        Не удалось загрузить источники салона. Выберите салон
-                        ещё раз.
-                    </AlertDescription>
-                </Alert>
-            )}
+                {choicesFailed && (
+                    <Alert variant="destructive">
+                        <AlertDescription>
+                            Не удалось загрузить источники салона. Выберите
+                            салон ещё раз.
+                        </AlertDescription>
+                    </Alert>
+                )}
 
-            <Sections>
-                <Section title="Контакты клиента">
-                    <OrderPhonesField
-                        phones={form.data.phones}
-                        maxExtra={maxExtraPhones}
-                        errors={errors}
-                        onChange={(phones) => form.setData('phones', phones)}
-                        beside={
+                <Sections>
+                    <Section title="Контакты клиента">
+                        <OrderPhonesField
+                            phones={form.data.phones}
+                            maxExtra={maxExtraPhones}
+                            errors={errors}
+                            onChange={(phones) =>
+                                form.setData('phones', phones)
+                            }
+                            beside={
+                                <FormField
+                                    label="Имя клиента"
+                                    error={errors.contact_name}
+                                >
+                                    <Input
+                                        id="order-contact-name"
+                                        value={form.data.contact_name}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'contact_name',
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="Необязательно"
+                                        maxLength={150}
+                                        autoComplete="off"
+                                    />
+                                </FormField>
+                            }
+                        />
+                    </Section>
+
+                    <Section title="Источник обращения">
+                        {(!single || responsibles) && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                {!single && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                Автосалон
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.showroom_id}
+                                    >
+                                        <Select
+                                            value={form.data.showroom_id}
+                                            onValueChange={chooseShowroom}
+                                        >
+                                            <SelectTrigger
+                                                id="order-showroom"
+                                                className="w-full"
+                                                aria-required
+                                            >
+                                                <SelectValue placeholder="Выберите салон" />
+                                            </SelectTrigger>
+                                            <SelectContent position="popper">
+                                                <SelectGroup>
+                                                    {showrooms.map((item) => (
+                                                        <SelectItem
+                                                            key={item.id}
+                                                            value={String(
+                                                                item.id,
+                                                            )}
+                                                        >
+                                                            {item.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormField>
+                                )}
+                                {responsibles && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                Ответственный
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.responsible_id}
+                                    >
+                                        <Select
+                                            value={
+                                                showroomId === undefined
+                                                    ? ''
+                                                    : form.data.responsible_id
+                                            }
+                                            onValueChange={(value) =>
+                                                form.setData(
+                                                    'responsible_id',
+                                                    value,
+                                                )
+                                            }
+                                            disabled={showroomId === undefined}
+                                        >
+                                            <SelectTrigger
+                                                id="order-responsible"
+                                                className="w-full"
+                                                aria-required
+                                            >
+                                                <SelectValue
+                                                    placeholder={
+                                                        showroomId === undefined
+                                                            ? 'Сначала выберите салон'
+                                                            : 'Выберите ответственного'
+                                                    }
+                                                />
+                                            </SelectTrigger>
+                                            <SelectContent position="popper">
+                                                <SelectGroup>
+                                                    {candidates.map((user) => (
+                                                        <SelectItem
+                                                            key={user.id}
+                                                            value={String(
+                                                                user.id,
+                                                            )}
+                                                        >
+                                                            {user.id === selfId
+                                                                ? `${user.name} (вы)`
+                                                                : user.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormField>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="grid gap-4 sm:grid-cols-2">
                             <FormField
-                                label="Имя клиента"
-                                error={errors.contact_name}
-                            >
-                                <Input
-                                    id="order-contact-name"
-                                    value={form.data.contact_name}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'contact_name',
-                                            event.target.value,
-                                        )
-                                    }
-                                    placeholder="Необязательно"
-                                    maxLength={150}
-                                    autoComplete="off"
-                                />
-                            </FormField>
-                        }
-                    />
-                </Section>
-
-                <Section title="Источник обращения">
-                    {(!single || responsibles) && (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        {!single && (
-                            <FormField
-                                label="Автосалон"
-                                error={errors.showroom_id}
+                                label={
+                                    <>
+                                        Источник
+                                        <span className="text-destructive">
+                                            *
+                                        </span>
+                                    </>
+                                }
+                                error={errors.source_id}
                             >
                                 <Select
-                                    value={form.data.showroom_id}
-                                    onValueChange={chooseShowroom}
+                                    value={form.data.source_id}
+                                    onValueChange={chooseSource}
+                                    disabled={!sources || sources.length === 0}
                                 >
                                     <SelectTrigger
-                                        id="order-showroom"
+                                        id="order-source"
                                         className="w-full"
                                         aria-required
                                     >
-                                        <SelectValue placeholder="Выберите салон" />
+                                        <SelectValue
+                                            placeholder={
+                                                choicesLoading
+                                                    ? 'Загрузка…'
+                                                    : sources
+                                                      ? 'Выберите источник'
+                                                      : 'Сначала выберите салон'
+                                            }
+                                        />
                                     </SelectTrigger>
                                     <SelectContent position="popper">
                                         <SelectGroup>
-                                            {showrooms.map((item) => (
+                                            {sources?.map((item) => (
                                                 <SelectItem
                                                     key={item.id}
                                                     value={String(item.id)}
@@ -366,289 +510,321 @@ function OrderCreateFields({
                                     </SelectContent>
                                 </Select>
                             </FormField>
-                        )}
-                        {responsibles && (
                             <FormField
-                                label="Ответственный"
-                                error={errors.responsible_id}
+                                label={
+                                    <>
+                                        Тип заявки
+                                        <span className="text-destructive">
+                                            *
+                                        </span>
+                                    </>
+                                }
+                                error={errors.contact_channel_id}
                             >
                                 <Select
-                                    value={form.data.responsible_id}
+                                    value={form.data.contact_channel_id}
                                     onValueChange={(value) =>
-                                        form.setData('responsible_id', value)
+                                        form.setData(
+                                            'contact_channel_id',
+                                            value,
+                                        )
                                     }
+                                    disabled={!source}
                                 >
                                     <SelectTrigger
-                                        id="order-responsible"
+                                        id="order-channel"
                                         className="w-full"
+                                        aria-required
                                     >
-                                        <SelectValue />
+                                        <SelectValue
+                                            placeholder={
+                                                source
+                                                    ? 'Выберите тип заявки'
+                                                    : 'Сначала выберите источник'
+                                            }
+                                        />
                                     </SelectTrigger>
                                     <SelectContent position="popper">
                                         <SelectGroup>
-                                            <SelectItem value={NONE}>
-                                                Не назначен
-                                            </SelectItem>
-                                            {candidates.map((user) => (
+                                            {source?.channels.map((channel) => (
                                                 <SelectItem
-                                                    key={user.id}
-                                                    value={String(user.id)}
+                                                    key={channel.id}
+                                                    value={String(channel.id)}
                                                 >
-                                                    {user.id === selfId
-                                                        ? `${user.name} (вы)`
-                                                        : user.name}
+                                                    {channel.name}
                                                 </SelectItem>
                                             ))}
                                         </SelectGroup>
                                     </SelectContent>
                                 </Select>
                             </FormField>
-                        )}
-                    </div>
-                    )}
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                        <FormField label="Источник" error={errors.source_id}>
-                            <Select
-                                value={form.data.source_id}
-                                onValueChange={chooseSource}
-                                disabled={!sources || sources.length === 0}
+                            <FormField
+                                label="Способ оплаты"
+                                error={errors.payment_method_id}
                             >
-                                <SelectTrigger
-                                    id="order-source"
-                                    className="w-full"
-                                    aria-required
+                                <Select
+                                    value={form.data.payment_method_id}
+                                    onValueChange={(value) =>
+                                        form.setData('payment_method_id', value)
+                                    }
                                 >
-                                    <SelectValue
-                                        placeholder={
-                                            choicesLoading
-                                                ? 'Загрузка…'
-                                                : sources
-                                                  ? 'Выберите источник'
-                                                  : 'Сначала выберите салон'
-                                        }
-                                    />
-                                </SelectTrigger>
-                                <SelectContent position="popper">
-                                    <SelectGroup>
-                                        {sources?.map((item) => (
-                                            <SelectItem
-                                                key={item.id}
-                                                value={String(item.id)}
-                                            >
-                                                {item.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectGroup>
-                                </SelectContent>
-                            </Select>
-                        </FormField>
-                        <FormField
-                            label="Тип заявки"
-                            error={errors.contact_channel_id}
-                        >
-                            <Select
-                                value={form.data.contact_channel_id}
-                                onValueChange={(value) =>
-                                    form.setData('contact_channel_id', value)
-                                }
-                                disabled={!source}
-                            >
-                                <SelectTrigger
-                                    id="order-channel"
-                                    className="w-full"
-                                >
-                                    <SelectValue
-                                        placeholder={
-                                            source
-                                                ? 'Выберите тип заявки'
-                                                : 'Сначала выберите источник'
-                                        }
-                                    />
-                                </SelectTrigger>
-                                <SelectContent position="popper">
-                                    <SelectGroup>
-                                        {source?.channels.map((channel) => (
-                                            <SelectItem
-                                                key={channel.id}
-                                                value={String(channel.id)}
-                                            >
-                                                {channel.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectGroup>
-                                </SelectContent>
-                            </Select>
-                        </FormField>
-                        <FormField
-                            label="Статус"
-                            error={errors.order_status_id}
-                        >
-                            <Select
-                                value={form.data.order_status_id}
-                                onValueChange={chooseStatus}
-                            >
-                                <SelectTrigger
-                                    id="order-status"
-                                    className="w-full justify-between"
-                                >
-                                    <SelectValue placeholder="Выберите статус" />
-                                </SelectTrigger>
-                                <SelectContent
-                                    position="popper"
-                                    className="min-w-48"
-                                >
-                                    <SelectGroup>
-                                        {statuses.map((item) => (
-                                            <SelectItem
-                                                key={item.id}
-                                                value={String(item.id)}
-                                            >
-                                                <OrderStatusDot
-                                                    color={item.color}
+                                    <SelectTrigger
+                                        id="order-payment-method"
+                                        className="w-full"
+                                    >
+                                        <SelectValue placeholder="Выберите способ оплаты" />
+                                    </SelectTrigger>
+                                    <SelectContent position="popper">
+                                        <SelectGroup>
+                                            {paymentMethods.map((item) => (
+                                                <SelectItem
+                                                    key={item.id}
+                                                    value={String(item.id)}
                                                 >
                                                     {item.name}
-                                                </OrderStatusDot>
-                                            </SelectItem>
-                                        ))}
-                                    </SelectGroup>
-                                </SelectContent>
-                            </Select>
-                        </FormField>
-                    </div>
-
-                    {reasonType && (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                                <FormField
-                                    label={reasonTitles[reasonType]}
-                                    error={errors.reason_id}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField
+                                label="Статус"
+                                error={errors.order_status_id}
+                            >
+                                <Select
+                                    value={form.data.order_status_id}
+                                    onValueChange={chooseStatus}
                                 >
-                                    <Select
-                                        value={form.data.reason_id}
-                                        onValueChange={(value) =>
-                                            form.setData('reason_id', value)
-                                        }
-                                        disabled={!choices}
+                                    <SelectTrigger
+                                        id="order-status"
+                                        className="w-full justify-between"
                                     >
-                                        <SelectTrigger
-                                            id="order-reason"
-                                            className="w-full"
-                                            aria-required
-                                        >
-                                            <SelectValue
-                                                placeholder={
-                                                    choices
-                                                        ? 'Выберите причину'
-                                                        : 'Сначала выберите салон'
-                                                }
-                                            />
-                                        </SelectTrigger>
-                                        <SelectContent position="popper">
-                                            <SelectGroup>
-                                                {reasons.map((item) => (
-                                                    <SelectItem
-                                                        key={item.id}
-                                                        value={String(item.id)}
+                                        <SelectValue placeholder="Выберите статус" />
+                                    </SelectTrigger>
+                                    <SelectContent
+                                        position="popper"
+                                        className="min-w-48"
+                                    >
+                                        <SelectGroup>
+                                            {statuses.map((item) => (
+                                                <SelectItem
+                                                    key={item.id}
+                                                    value={String(item.id)}
+                                                >
+                                                    <OrderStatusDot
+                                                        color={item.color}
                                                     >
                                                         {item.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectGroup>
-                                        </SelectContent>
-                                    </Select>
-                                </FormField>
-                                <FormField
-                                    label="Пояснение к причине"
-                                    error={errors.reason_comment}
-                                >
-                                    <Input
-                                        id="order-reason-comment"
-                                        value={form.data.reason_comment}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'reason_comment',
-                                                event.target.value,
-                                            )
-                                        }
-                                        required={reason?.comment_required}
-                                        maxLength={2000}
-                                    />
-                                </FormField>
+                                                    </OrderStatusDot>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
                         </div>
-                    )}
-                </Section>
 
-                <Section title="Запланировать перезвон или приезд">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <FormField
-                            label={
-                                status?.requires_callback_at ? (
-                                    <>
-                                        Перезвонить
-                                        <span className="text-destructive">
-                                            *
-                                        </span>
-                                    </>
-                                ) : (
-                                    'Перезвонить'
-                                )
-                            }
-                            error={errors.callback_at}
-                        >
-                            <DateTimePicker
-                                id="order-callback-at"
-                                value={form.data.callback_at}
-                                onChange={(value) =>
-                                    form.setData('callback_at', value)
-                                }
-                            />
-                        </FormField>
-                        <FormField
-                            label={
-                                status?.requires_arrival_at ? (
-                                    <>
-                                        Приедет
-                                        <span className="text-destructive">
-                                            *
-                                        </span>
-                                    </>
-                                ) : (
-                                    'Приедет'
-                                )
-                            }
-                            error={errors.arrival_at}
-                        >
-                            <DateTimePicker
-                                id="order-arrival-at"
-                                value={form.data.arrival_at}
-                                onChange={(value) =>
-                                    form.setData('arrival_at', value)
-                                }
-                            />
-                        </FormField>
-                    </div>
-                </Section>
-
-                {canComment && (
-                    <Section title="Комментарий">
-                        <FormField label="Комментарий" error={errors.comment}>
-                            <Textarea
-                                id="order-comment"
-                                placeholder="Введите комментарий…"
-                                className="w-full"
-                                value={form.data.comment}
-                                onChange={(event) =>
-                                    form.setData('comment', event.target.value)
-                                }
-                                maxLength={5000}
-                            />
-                        </FormField>
+                        {(reasonType ||
+                            status?.requires_callback_at ||
+                            status?.requires_arrival_at ||
+                            status?.requires_visit_result) && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                {reasonType && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                {reasonTitles[reasonType]}
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.reason_id}
+                                    >
+                                        <Select
+                                            value={form.data.reason_id}
+                                            onValueChange={(value) =>
+                                                form.setData('reason_id', value)
+                                            }
+                                            disabled={!choices}
+                                        >
+                                            <SelectTrigger
+                                                id="order-reason"
+                                                className="w-full"
+                                                aria-required
+                                            >
+                                                <SelectValue
+                                                    placeholder={
+                                                        choices
+                                                            ? 'Выберите причину'
+                                                            : 'Сначала выберите салон'
+                                                    }
+                                                />
+                                            </SelectTrigger>
+                                            <SelectContent position="popper">
+                                                <SelectGroup>
+                                                    {reasons.map((item) => (
+                                                        <SelectItem
+                                                            key={item.id}
+                                                            value={String(
+                                                                item.id,
+                                                            )}
+                                                        >
+                                                            {item.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormField>
+                                )}
+                                {reasonType && (
+                                    <FormField
+                                        label="Пояснение к причине"
+                                        error={errors.reason_comment}
+                                    >
+                                        <Input
+                                            id="order-reason-comment"
+                                            value={form.data.reason_comment}
+                                            onChange={(event) =>
+                                                form.setData(
+                                                    'reason_comment',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            required={reason?.comment_required}
+                                            maxLength={2000}
+                                        />
+                                    </FormField>
+                                )}
+                                {status?.requires_callback_at && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                Перезвонить
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.callback_at}
+                                    >
+                                        <DateTimePicker
+                                            id="order-callback-at"
+                                            value={form.data.callback_at}
+                                            onChange={(value) =>
+                                                form.setData(
+                                                    'callback_at',
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </FormField>
+                                )}
+                                {status?.requires_arrival_at && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                {status.requires_visit_result
+                                                    ? 'Дата приезда'
+                                                    : 'Приедет'}
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.arrival_at}
+                                    >
+                                        <DateTimePicker
+                                            id="order-arrival-at"
+                                            value={form.data.arrival_at}
+                                            onChange={(value) =>
+                                                form.setData(
+                                                    'arrival_at',
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </FormField>
+                                )}
+                                {status?.requires_visit_result && (
+                                    <FormField
+                                        label={
+                                            <>
+                                                Итог визита
+                                                <span className="text-destructive">
+                                                    *
+                                                </span>
+                                            </>
+                                        }
+                                        error={errors.visit_result_id}
+                                    >
+                                        <Select
+                                            value={form.data.visit_result_id}
+                                            onValueChange={(value) =>
+                                                form.setData(
+                                                    'visit_result_id',
+                                                    value,
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger
+                                                id="order-visit-result"
+                                                className="w-full"
+                                                aria-required
+                                            >
+                                                <SelectValue placeholder="Выберите итог визита" />
+                                            </SelectTrigger>
+                                            <SelectContent position="popper">
+                                                <SelectGroup>
+                                                    {visitResults.map(
+                                                        (item) => (
+                                                            <SelectItem
+                                                                key={item.id}
+                                                                value={String(
+                                                                    item.id,
+                                                                )}
+                                                            >
+                                                                {item.name}
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormField>
+                                )}
+                            </div>
+                        )}
                     </Section>
-                )}
-            </Sections>
+
+                    {canComment && (
+                        <Section title="Комментарий">
+                            <FormField
+                                label="Комментарий"
+                                error={errors.comment}
+                            >
+                                <Textarea
+                                    id="order-comment"
+                                    placeholder="Введите комментарий…"
+                                    className="w-full"
+                                    value={form.data.comment}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'comment',
+                                            event.target.value,
+                                        )
+                                    }
+                                    maxLength={5000}
+                                />
+                            </FormField>
+                        </Section>
+                    )}
+                </Sections>
             </div>
 
-            <DialogFooter className="m-0 shrink-0">
+            <DialogFooter className="shrink-0 border-t p-4">
                 <Button
                     type="button"
                     variant="outline"

@@ -39,7 +39,7 @@ export type CascaderRowEvent = React.MouseEvent<HTMLElement> & VetoableEvent;
 // check have to land on the same number, in LOGICAL properties. These eight
 // numbers MIRROR the shared style sheets; keep them in step with
 // `registry/styles/style-*.css`.
-const ROW_INSET_CLASS = '[--cascader-row-inset:12px]';
+const ROW_INSET_CLASS = '[--cascader-row-inset:8px]';
 
 // Both insets equal, for a row with no check. `!` because a consumer may not
 // import the sheets into `layer(base)`, where the class would win on order.
@@ -61,7 +61,7 @@ const INDICATOR_CLASS =
 // The row's type, gap, radius and icon size per style. No horizontal padding:
 // every row pairs this with `ROW_FLUSH_CLASS` or `ROW_GUTTER_CLASS`.
 const ROW_THEME_CLASS =
-    "data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground [&_svg:not([class*='size-'])]:size-4 rounded-xl py-2";
+    "data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground rounded-sm py-1.5 [&_svg:not([class*='size-'])]:size-4";
 
 /**
  * The row's gap and type, per style, held apart from the rest of the theme.
@@ -71,7 +71,7 @@ const ROW_THEME_CLASS =
  * it would have to lose to. Not receiving the token beats overriding it with
  * `!`, which a consumer then has to fight in turn.
  */
-const ROW_GAP_CLASS = 'gap-2.5';
+const ROW_GAP_CLASS = 'gap-2';
 
 const ROW_TEXT_CLASS = 'text-sm';
 
@@ -1027,13 +1027,13 @@ const CascaderGroupContext = React.createContext(false);
 
 // A heading over a run of rows. All eight styles are spelled out because the
 // type is not uniform (sera is uppercase), and the inset is the row's own.
-const CASCADER_LABEL_CLASS = `text-muted-foreground text-xs py-2.5 ${CASCADER_ACTION_INSET_CLASS} block truncate`;
+const CASCADER_LABEL_CLASS = `text-muted-foreground text-xs py-1.5 ${CASCADER_ACTION_INSET_CLASS} block truncate`;
 
 // A rule between two runs. The inline margin is not the combobox separator's:
 // that cancels the container's padding with a per-style number, wrong in a
 // footer and 4px too much in lyra. `--cascader-list-pad` reaches the edge.
 const CASCADER_SEPARATOR_CLASS =
-    'h-px my-1 bg-border/50 mx-[calc(var(--cascader-list-pad,4px)*-1)]! shrink-0';
+    'h-px bg-border my-1 mx-[calc(var(--cascader-list-pad,4px)*-1)]! shrink-0';
 
 export interface CascaderGroupProps extends Omit<
     ComboboxPrimitive.Group.Props,

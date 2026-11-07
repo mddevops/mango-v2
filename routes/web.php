@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Distribution\DistributionController;
+use App\Http\Controllers\KnowledgeBase\CarCatalogController;
 use App\Http\Controllers\Orders\CallCardController;
 use App\Http\Controllers\Orders\CallRecordingController;
 use App\Http\Controllers\Orders\MissedCallController;
@@ -8,6 +9,8 @@ use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderReasonController;
 use App\Http\Controllers\Orders\OrdersListPreferenceController;
 use App\Http\Controllers\Orders\OrderStatusController;
+use App\Http\Controllers\Orders\PaymentMethodController;
+use App\Http\Controllers\Orders\VisitResultController;
 use App\Http\Controllers\Organization\AuditLogController;
 use App\Http\Controllers\Organization\DepartmentController;
 use App\Http\Controllers\Organization\RoleController;
@@ -78,6 +81,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('references/order-reasons/{type}/{id}', [OrderReasonController::class, 'update'])->whereNumber('id')->name('order-reasons.update');
     Route::patch('references/order-reasons/{type}/{id}/status', [OrderReasonController::class, 'status'])->whereNumber('id')->name('order-reasons.status');
 
+    Route::get('references/payment-methods', [PaymentMethodController::class, 'index'])->name('payment-methods.index');
+    Route::post('references/payment-methods', [PaymentMethodController::class, 'store'])->name('payment-methods.store');
+    Route::patch('references/payment-methods/order', [PaymentMethodController::class, 'reorder'])->name('payment-methods.reorder');
+    Route::put('references/payment-methods/{id}', [PaymentMethodController::class, 'update'])->whereNumber('id')->name('payment-methods.update');
+    Route::patch('references/payment-methods/{id}/status', [PaymentMethodController::class, 'status'])->whereNumber('id')->name('payment-methods.status');
+    Route::get('references/visit-results', [VisitResultController::class, 'index'])->name('visit-results.index');
+    Route::post('references/visit-results', [VisitResultController::class, 'store'])->name('visit-results.store');
+    Route::patch('references/visit-results/order', [VisitResultController::class, 'reorder'])->name('visit-results.reorder');
+    Route::put('references/visit-results/{id}', [VisitResultController::class, 'update'])->whereNumber('id')->name('visit-results.update');
+    Route::patch('references/visit-results/{id}/status', [VisitResultController::class, 'status'])->whereNumber('id')->name('visit-results.status');
+
     Route::redirect('source-references', 'source-references/kinds');
     Route::get('source-references/{type}', [SourceReferenceController::class, 'index'])->name('source-references.index');
     Route::post('source-references/{type}', [SourceReferenceController::class, 'store'])->name('source-references.store');
@@ -128,6 +142,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('support/{ticket}', [SupportTicketController::class, 'show'])->whereNumber('ticket')->name('support.show');
     Route::post('support/{ticket}/messages', [SupportTicketController::class, 'reply'])->whereNumber('ticket')->name('support.messages.store');
     Route::delete('support/{ticket}', [SupportTicketController::class, 'destroy'])->whereNumber('ticket')->name('support.destroy');
+
+    Route::prefix('knowledge-base')->name('knowledge-base.')->controller(CarCatalogController::class)->group(function () {
+        $slug = '[A-Za-z0-9_\-]+';
+
+        Route::get('/', 'index')->name('index');
+        Route::get('cars', 'marks')->name('marks');
+        Route::get('cars/{mark}', 'mark')->where('mark', $slug)->name('mark');
+        Route::get('cars/{mark}/{model}', 'model')->where(['mark' => $slug, 'model' => $slug])->name('model');
+        Route::get('cars/{mark}/{model}/{generation}/{series}', 'series')
+            ->where(['mark' => $slug, 'model' => $slug, 'generation' => 'g?[0-9]+', 'series' => '[0-9]+'])
+            ->name('series');
+        Route::get('cars/{mark}/{model}/{generation}/{series}/specifications/{modification}', 'specifications')
+            ->where(['mark' => $slug, 'model' => $slug, 'generation' => 'g?[0-9]+', 'series' => '[0-9]+', 'modification' => '[0-9]+'])
+            ->name('specifications');
+        Route::get('cars/{mark}/{model}/{generation}/{series}/equipment/{equipment}', 'equipment')
+            ->where(['mark' => $slug, 'model' => $slug, 'generation' => 'g?[0-9]+', 'series' => '[0-9]+', 'equipment' => '[0-9]+'])
+            ->name('equipment');
+    });
 });
 
 require __DIR__.'/settings.php';

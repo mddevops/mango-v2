@@ -4,12 +4,7 @@ import type { IconColor, ReferenceOption } from './sources';
 export type OrderReasonTypeValue = 'trash' | 'drop';
 
 export type OrderStatusColor =
-    | 'gray'
-    | 'dark'
-    | 'green'
-    | 'violet'
-    | 'yellow'
-    | 'red';
+    'gray' | 'dark' | 'green' | 'violet' | 'yellow' | 'red';
 
 export type OrderStatusRow = {
     id: number;
@@ -24,6 +19,7 @@ export type OrderStatusRow = {
     show_as_tab: boolean;
     requires_callback_at: boolean;
     requires_arrival_at: boolean;
+    requires_visit_result: boolean;
     required_reason: OrderReasonTypeValue | null;
     lock_version: number;
 };
@@ -132,7 +128,10 @@ export type OrderCard = {
     origin: string;
     showroom: { id: number; name: string; timezone: string };
     source: ReferenceOption;
+    source_icon: string | null;
+    source_icon_color: IconColor;
     channel: ReferenceOption;
+    payment_method: ReferenceOption | null;
     status: OrderStatusLabel & { id: number };
     responsible: ReferenceOption | null;
     creator: string | null;
@@ -141,9 +140,8 @@ export type OrderCard = {
     car_interest: string | null;
     callback_at: string | null;
     arrival_at: string | null;
-    reason:
-        | (ReferenceOption & { type: OrderReasonTypeValue | null })
-        | null;
+    visit_result: ReferenceOption | null;
+    reason: (ReferenceOption & { type: OrderReasonTypeValue | null }) | null;
     reason_comment: string | null;
     event_at: string;
     received_at: string;
@@ -163,11 +161,14 @@ export type OrderStatusOption = ReferenceOption & {
     color: OrderStatusColor;
     requires_callback_at: boolean;
     requires_arrival_at: boolean;
+    requires_visit_result: boolean;
     required_reason: OrderReasonTypeValue | null;
 };
 
 export type OrderEditOptions = {
     channels: ReferenceOption[];
+    paymentMethods: ReferenceOption[];
+    visitResults: ReferenceOption[];
     statuses: OrderStatusOption[];
     reasons: Record<
         OrderReasonTypeValue,
@@ -234,7 +235,8 @@ export type OrderHistoryEntry = {
 export type OrderSourceChoice = {
     id: number;
     name: string;
-    channels: { id: number; name: string }[];
+    /** `preferred` marks «Обратный звонок», picked by default. */
+    channels: { id: number; name: string; preferred: boolean }[];
 };
 
 /** What depends on the showroom chosen in the creation dialog. */
@@ -251,13 +253,16 @@ export type OrderCreateForm = {
     showrooms: ReferenceOption[];
     /** Sent at once only with a single showroom, otherwise loaded after the choice. */
     choices: OrderShowroomChoices | null;
+    paymentMethods: ReferenceOption[];
+    visitResults: ReferenceOption[];
+    /** «Не определено» while it is active. */
+    defaultPaymentMethodId: number | null;
     statuses: OrderStatusOption[];
     initialStatusId: number | null;
     reasonTitles: Record<OrderReasonTypeValue, string>;
     /** null: no right to choose, the creator becomes responsible. */
     responsibles:
-        | { id: number; name: string; showroom_ids: number[] | null }[]
-        | null;
+        { id: number; name: string; showroom_ids: number[] | null }[] | null;
     selfId: number;
     maxExtraPhones: number;
     canComment: boolean;
@@ -274,3 +279,14 @@ export type OrderReasonRow = {
     showrooms: ReferenceOption[];
     lock_version: number;
 };
+
+export type PaymentMethodRow = {
+    id: number;
+    code: string;
+    name: string;
+    active: boolean;
+    orders_count: number;
+    lock_version: number;
+};
+
+export type VisitResultRow = PaymentMethodRow;

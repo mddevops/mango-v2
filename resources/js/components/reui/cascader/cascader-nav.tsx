@@ -140,7 +140,7 @@ function CascaderBack({
             className={cn(
                 'flex shrink-0 items-center justify-center rounded-md text-muted-foreground outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
                 /* A notch under the row height: an affordance, not a second field. */
-                'size-7',
+                'size-6',
                 className,
             )}
             {...props}
@@ -269,7 +269,7 @@ function CascaderBreadcrumb({
             // Lines up with the ROWS, not the header: each style's list padding plus
             // its row inset. vega/mira/rhea `p-1`+`pl-2`, nova `p-1`+`pl-1.5`, maia
             // `p-1`+`pl-3`, lyra `pl-2`, luma/sera `p-1.5`+`pl-3`, per style-*.css.
-            'px-4',
+            'px-3',
             className,
         ),
         ...props,
@@ -554,7 +554,7 @@ function CascaderInput({
                 /* Each style sizes a combobox search field only as a DIRECT child of
            the popup; this row is nested, so the ladder is mirrored here rather
            than hardcoding one height for all eight styles. */
-                'h-9',
+                'h-8',
             )}
         >
             {showBack ? <CascaderBack /> : null}

@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\Showroom;
 use App\Models\Source;
 use App\Models\User;
+use App\Services\OrderManager;
 use App\Support\PermissionCatalog as P;
 use Database\Seeders\OrderReferenceDataSeeder;
 use Database\Seeders\ReferenceDataSeeder;
@@ -197,6 +198,23 @@ class OrderVisibilityTest extends TestCase
 
     private function orderFor(Source $source, ?int $responsibleId, ?string $phone = null): Order
     {
+        // Manual create requires a responsible; unassigned fixtures go through the service.
+        if ($responsibleId === null) {
+            $phones = [$phone ?? sprintf('+7 999 100-%02d-%02d', intdiv(++$this->phoneSequence, 100), $this->phoneSequence % 100)];
+
+            return app(OrderManager::class)->create($this->admin, [
+                'showroom_id' => $source->showroom_id,
+                'source_id' => $source->id,
+                'contact_channel_id' => $source->channels()->orderBy('contact_channels.id')->value('contact_channels.id'),
+                'contact_name' => 'Клиент',
+                'phones' => $phones,
+                'phone_names' => [],
+                'car_interest' => null,
+                'responsible_id' => null,
+                'assign_any' => true,
+            ]);
+        }
+
         $this->actingAs($this->admin)
             ->post(route('orders.store'), $this->createPayload($source, ['responsible_id' => $responsibleId, ...($phone ? ['phones' => [$phone]] : [])]))
             ->assertSessionHasNoErrors();

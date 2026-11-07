@@ -138,6 +138,7 @@ class OrderPhoneMigrationTest extends TestCase
             'contact_name' => 'Клиент',
             'phones' => $rows,
             'car_interest' => null,
+            'responsible_id' => $this->admin->id,
         ])->assertSessionHasNoErrors();
 
         return Order::query()->latest('id')->firstOrFail();

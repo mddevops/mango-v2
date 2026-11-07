@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $showroom_id
  * @property int $source_id
  * @property int $contact_channel_id
+ * @property int|null $payment_method_id
  * @property OrderOrigin $origin
  * @property string|null $contact_name
  * @property string $phone the main phone, normalized («79515346783»); additional ones are in order_phones
@@ -36,6 +37,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property DistributionState|null $distribution_state
  * @property CarbonImmutable|null $callback_at
  * @property CarbonImmutable|null $arrival_at
+ * @property int|null $visit_result_id
  * @property string|null $car_interest
  * @property int|null $order_trash_reason_id
  * @property int|null $order_drop_reason_id
@@ -53,6 +55,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read Showroom $showroom
  * @property-read Source $source
  * @property-read ContactChannel $channel
+ * @property-read PaymentMethod|null $paymentMethod
+ * @property-read VisitResult|null $visitResult
  * @property-read OrderStatus $status
  * @property-read User|null $responsible
  * @property-read User|null $creator
@@ -68,8 +72,8 @@ class Order extends Model
     use HasLockVersion;
 
     protected $fillable = [
-        'client_id', 'showroom_id', 'source_id', 'contact_channel_id', 'origin', 'contact_name', 'phone',
-        'order_status_id', 'responsible_id', 'callback_at', 'arrival_at', 'car_interest',
+        'client_id', 'showroom_id', 'source_id', 'contact_channel_id', 'payment_method_id', 'origin', 'contact_name', 'phone',
+        'order_status_id', 'responsible_id', 'callback_at', 'arrival_at', 'visit_result_id', 'car_interest',
         'order_trash_reason_id', 'order_drop_reason_id', 'reason_comment',
         'event_at', 'received_at', 'business_date', 'business_day_rule', 'repeat_number', 'created_by',
     ];
@@ -86,12 +90,14 @@ class Order extends Model
             'showroom_id' => 'integer',
             'source_id' => 'integer',
             'contact_channel_id' => 'integer',
+            'payment_method_id' => 'integer',
             'origin' => OrderOrigin::class,
             'order_status_id' => 'integer',
             'responsible_id' => 'integer',
             'distribution_state' => DistributionState::class,
             'callback_at' => 'datetime',
             'arrival_at' => 'datetime',
+            'visit_result_id' => 'integer',
             'order_trash_reason_id' => 'integer',
             'order_drop_reason_id' => 'integer',
             'event_at' => 'datetime',
@@ -152,6 +158,22 @@ class Order extends Model
     public function channel(): BelongsTo
     {
         return $this->belongsTo(ContactChannel::class, 'contact_channel_id');
+    }
+
+    /**
+     * @return BelongsTo<PaymentMethod, $this>
+     */
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
+    }
+
+    /**
+     * @return BelongsTo<VisitResult, $this>
+     */
+    public function visitResult(): BelongsTo
+    {
+        return $this->belongsTo(VisitResult::class);
     }
 
     /**

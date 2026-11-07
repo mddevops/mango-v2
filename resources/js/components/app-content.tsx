@@ -17,7 +17,7 @@ export function AppContent({
         return (
             <SidebarInset
                 className={cn(
-                    'm-2 min-h-0 overflow-hidden rounded-lg shadow-sm ring-1 ring-sidebar-border md:ml-0',
+                    'min-h-0 overflow-hidden md:my-2.5 md:me-2.5 md:rounded-[18px] md:shadow-sm dark:md:border dark:md:border-border/60',
                     className,
                 )}
                 {...props}

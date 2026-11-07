@@ -24,7 +24,7 @@ class ReorderRequest extends FormRequest
 
         return match ($this->route()?->getName()) {
             'source-references.reorder' => (bool) $user?->can('source-references.manage'),
-            'order-statuses.reorder', 'order-reasons.reorder' => (bool) $user?->can('order-references.manage'),
+            'order-statuses.reorder', 'order-reasons.reorder', 'payment-methods.reorder', 'visit-results.reorder' => (bool) $user?->can('order-references.manage'),
             default => false,
         };
     }

@@ -60,21 +60,13 @@ function SettingRow({
                 <SelectTrigger
                     id={id}
                     size="sm"
-                    className="w-33 shrink-0 rounded-lg"
+                    className="w-33 shrink-0"
                 >
                     <SelectValue />
                 </SelectTrigger>
-                <SelectContent
-                    position="popper"
-                    align="end"
-                    className="rounded-lg"
-                >
+                <SelectContent position="popper" align="end">
                     {options.map((option) => (
-                        <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            className="rounded-md"
-                        >
+                        <SelectItem key={option.value} value={option.value}>
                             {option.label}
                         </SelectItem>
                     ))}
@@ -147,7 +139,7 @@ export function RegistrySettings({
                                             }
                                         }}
                                         aria-labelledby={`${id}-view`}
-                                        className="shrink-0 data-[spacing=0]:data-[variant=outline]:rounded-lg"
+                                        className="shrink-0"
                                     >
                                         {VIEWS.map(({ value, label, icon: Icon }) => (
                                             <ToggleGroupItem
@@ -155,7 +147,7 @@ export function RegistrySettings({
                                                 value={value}
                                                 aria-label={label}
                                                 title={label}
-                                                className="h-8 min-w-8 px-2! group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-l-lg group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-r-lg"
+                                                className="h-8 min-w-8 px-2!"
                                             >
                                                 <Icon aria-hidden="true" />
                                             </ToggleGroupItem>
@@ -198,7 +190,6 @@ export function RegistrySettings({
                                                         : 'outline'
                                                 }
                                                 className={cn(
-                                                    'rounded-full',
                                                     visible &&
                                                         'border-foreground/10',
                                                 )}

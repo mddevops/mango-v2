@@ -17,8 +17,8 @@ function capitalize(text: string): string {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** The employee's local date and time; refreshed on every minute change. Hidden on phones. */
-export function HeaderClock() {
+/** The current moment, refreshed on every minute change. */
+function useNow(): Date {
     const [now, setNow] = useState(() => new Date());
 
     useEffect(() => {
@@ -40,6 +40,13 @@ export function HeaderClock() {
         return () => clearTimeout(timer);
     }, []);
 
+    return now;
+}
+
+/** The employee's local date and time. Hidden on phones. */
+export function HeaderClock() {
+    const now = useNow();
+
     return (
         <time
             dateTime={now.toISOString()}
@@ -50,6 +57,24 @@ export function HeaderClock() {
                 {dayFormat.format(now).replace('.', '')} ·{' '}
                 {timeFormat.format(now)}
             </span>
+        </time>
+    );
+}
+
+/** The same clock stacked into the narrow column: time over date. */
+export function RailClock() {
+    const now = useNow();
+
+    return (
+        <time
+            dateTime={now.toISOString()}
+            title={capitalize(fullFormat.format(now))}
+            className="flex flex-col items-center py-1 text-xs leading-tight tabular-nums"
+        >
+            <span className="font-medium text-white">
+                {timeFormat.format(now)}
+            </span>
+            <span>{dayFormat.format(now).replace('.', '')}</span>
         </time>
     );
 }

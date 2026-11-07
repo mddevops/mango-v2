@@ -147,13 +147,13 @@ function DataGridColumnFilter<TData extends object, TValue>({
                                             }
                                         }}
                                         className={cn(
-                                            'relative flex cursor-pointer items-center gap-2 rounded-xl px-2 py-1.5 text-sm outline-hidden select-none',
+                                            'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none',
                                             'hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground',
                                         )}
                                     >
                                         <div
                                             className={cn(
-                                                'flex h-4 w-4 items-center justify-center rounded-md border border-primary',
+                                                'flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
                                                 isSelected
                                                     ? 'bg-primary text-primary-foreground'
                                                     : 'opacity-50 [&_svg]:invisible',
@@ -194,7 +194,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
                                             column?.setFilterValue(undefined);
                                         }
                                     }}
-                                    className="relative flex cursor-pointer items-center justify-center rounded-xl px-2 py-1.5 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                                    className="relative flex cursor-pointer items-center justify-center rounded-sm px-2 py-1.5 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                                 >
                                     {i18n.labels.filterClear}
                                 </div>

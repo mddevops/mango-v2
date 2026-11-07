@@ -37,7 +37,8 @@ class OrderStatusesTest extends TestCase
         $this->assertSame(['Новая'], OrderStatus::query()->where('is_initial', true)->pluck('name')->all());
 
         $this->assertSame(['Перезвон'], OrderStatus::query()->where('requires_callback_at', true)->pluck('name')->all());
-        $this->assertSame(['Приедет'], OrderStatus::query()->where('requires_arrival_at', true)->pluck('name')->all());
+        $this->assertSame(['Приедет', 'Приехал'], OrderStatus::query()->where('requires_arrival_at', true)->orderBy('sort_order')->pluck('name')->all());
+        $this->assertSame(['Приехал'], OrderStatus::query()->where('requires_visit_result', true)->pluck('name')->all());
         $this->assertSame(['Корзина' => 'trash'], OrderStatus::query()->whereNotNull('required_reason')->get()->mapWithKeys(fn (OrderStatus $status) => [$status->name => $status->required_reason->value])->all());
         $this->assertSame(0, OrderStatus::query()->where('color', '!=', 'gray')->count());
     }

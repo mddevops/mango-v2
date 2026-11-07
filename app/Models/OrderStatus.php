@@ -10,7 +10,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Editable order status. Its requirements (callback date, arrival date, reason list) are
+ * Editable order status. Its requirements (callback date, arrival date, visit result, reason list) are
  * enforced by OrderManager when an order gets this status or changes the related values.
  *
  * @property int $id
@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property OrderStatusPurpose|null $purpose
  * @property bool $requires_callback_at
  * @property bool $requires_arrival_at
+ * @property bool $requires_visit_result
  * @property OrderReasonType|null $required_reason
  * @property int $lock_version
  * @property CarbonImmutable|null $created_at
@@ -38,7 +39,7 @@ class OrderStatus extends Model
 
     protected $fillable = [
         'code', 'name', 'description', 'color', 'sort_order', 'show_as_tab',
-        'requires_callback_at', 'requires_arrival_at', 'required_reason',
+        'requires_callback_at', 'requires_arrival_at', 'requires_visit_result', 'required_reason',
     ];
 
     protected $attributes = [
@@ -49,6 +50,7 @@ class OrderStatus extends Model
         'is_initial' => false,
         'requires_callback_at' => false,
         'requires_arrival_at' => false,
+        'requires_visit_result' => false,
         'lock_version' => 0,
     ];
 
@@ -63,6 +65,7 @@ class OrderStatus extends Model
             'purpose' => OrderStatusPurpose::class,
             'requires_callback_at' => 'boolean',
             'requires_arrival_at' => 'boolean',
+            'requires_visit_result' => 'boolean',
             'required_reason' => OrderReasonType::class,
             'lock_version' => 'integer',
         ];
@@ -70,6 +73,6 @@ class OrderStatus extends Model
 
     public function hasRequirements(): bool
     {
-        return $this->requires_callback_at || $this->requires_arrival_at || $this->required_reason !== null;
+        return $this->requires_callback_at || $this->requires_arrival_at || $this->requires_visit_result || $this->required_reason !== null;
     }
 }

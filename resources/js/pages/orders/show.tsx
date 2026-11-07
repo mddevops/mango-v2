@@ -1,9 +1,12 @@
 import { Head, Link, router, useForm, useHttp } from '@inertiajs/react';
 import {
+    ArrowLeft,
     ChevronLeft,
     ChevronRight,
+    Clock,
     History,
     MessageSquare,
+    MessageSquareText,
     Building2,
     Phone,
     RotateCcw,
@@ -19,6 +22,7 @@ import {
     DistributeButton,
     TakeButton,
 } from '@/components/distribution/distribute-button';
+import { DateTimePicker } from '@/components/date-time-picker';
 import FormField from '@/components/form-field';
 import {
     OrderPhonesField,
@@ -26,16 +30,12 @@ import {
     toPhoneRows,
 } from '@/components/orders/order-phones-field';
 import { MissedCallsSection } from '@/components/orders/missed-calls-section';
-import { OrderRepeatBadge } from '@/components/orders/order-repeat-badge';
-import {
-    OrderStatusBadge,
-    OrderStatusDot,
-} from '@/components/orders/order-status-badge';
+import { OrderStatusDot } from '@/components/orders/order-status-badge';
 import { RelatedOrdersTable } from '@/components/orders/related-orders-table';
 import { TransferDialog } from '@/components/orders/transfer-dialog';
 import { FormAlert } from '@/components/organization/form-alert';
 import { FormSection } from '@/components/organization/form-section';
-import { PageBody, PageHeader } from '@/components/organization/page-header';
+import { ReferenceIcon } from '@/components/reference-icon';
 import {
     Alert,
     AlertAction,
@@ -43,6 +43,7 @@ import {
     AlertTitle,
 } from '@/components/reui/alert';
 import { Badge } from '@/components/reui/badge';
+import { Frame, FramePanel } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -60,6 +61,11 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
     formatBusinessDate,
     formatLocal,
@@ -110,7 +116,15 @@ type Props = {
 const NONE = 'none';
 
 /** Reloads after a save: the card itself, never a new «view» of it. */
-const SAVED_PROPS = ['order', 'options', 'previous', 'can', 'transferShowrooms'];
+const SAVED_PROPS = [
+    'order',
+    'options',
+    'previous',
+    'can',
+    'transferShowrooms',
+];
+
+const EDIT_FORM_ID = 'order-edit-form';
 
 function TransferFact({
     label,
@@ -305,27 +319,33 @@ function OrderEditForm({
     options,
     canAssign,
     onEditing,
+    onProcessing,
 }: {
     order: OrderCard;
     options: OrderEditOptions;
     canAssign: boolean;
     onEditing: (editing: boolean) => void;
+    onProcessing: (processing: boolean) => void;
 }) {
     const [failure, setFailure] = useState<string | null>(null);
 
     const form = useForm({
         contact_channel_id: String(order.channel.id),
+        payment_method_id: order.payment_method
+            ? String(order.payment_method.id)
+            : '',
         contact_name: order.contact_name ?? '',
         phones: toPhoneRows(order.phones),
         car_interest: order.car_interest ?? '',
         order_status_id: String(order.status.id),
         callback_at: order.callback_at ?? '',
         arrival_at: order.arrival_at ?? '',
+        visit_result_id: order.visit_result
+            ? String(order.visit_result.id)
+            : '',
         reason_id: order.reason ? String(order.reason.id) : '',
         reason_comment: order.reason_comment ?? '',
-        responsible_id: order.responsible
-            ? String(order.responsible.id)
-            : NONE,
+        responsible_id: order.responsible ? String(order.responsible.id) : NONE,
         lock_version: order.lock_version,
     });
 
@@ -336,6 +356,12 @@ function OrderEditForm({
 
         return () => onEditing(false);
     }, [editing, onEditing]);
+
+    useEffect(() => {
+        onProcessing(form.processing);
+
+        return () => onProcessing(false);
+    }, [form.processing, onProcessing]);
 
     const errors = form.errors as Record<string, string | undefined>;
     const status = options.statuses.find(
@@ -352,6 +378,9 @@ function OrderEditForm({
     const showArrival = Boolean(
         status?.requires_arrival_at || form.data.arrival_at,
     );
+    const showVisitResult = Boolean(
+        status?.requires_visit_result || form.data.visit_result_id,
+    );
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -363,12 +392,18 @@ function OrderEditForm({
         form.transform((data) => {
             const payload: Record<string, unknown> = {
                 contact_channel_id: Number(data.contact_channel_id),
+                payment_method_id: data.payment_method_id
+                    ? Number(data.payment_method_id)
+                    : null,
                 contact_name: data.contact_name || null,
                 phones: phonesPayload(data.phones),
                 car_interest: data.car_interest || null,
                 order_status_id: Number(data.order_status_id),
                 callback_at: data.callback_at || null,
                 arrival_at: data.arrival_at || null,
+                visit_result_id: data.visit_result_id
+                    ? Number(data.visit_result_id)
+                    : null,
                 reason_id: data.reason_id ? Number(data.reason_id) : null,
                 reason_comment: data.reason_comment || null,
                 lock_version: data.lock_version,
@@ -391,80 +426,77 @@ function OrderEditForm({
     };
 
     return (
-        <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+        <form
+            id={EDIT_FORM_ID}
+            onSubmit={submit}
+            className="flex flex-col gap-4"
+            noValidate
+        >
             <FormAlert conflict={errors.lock_version} failure={failure} />
 
-            <FormSection
-                title="Обработка"
-                description={`Даты указываются по времени салона (${order.showroom.timezone}).`}
-            >
-                <div className="grid gap-4 md:grid-cols-2">
-                    <FormField label="Статус" error={errors.order_status_id}>
-                        <Select
-                            value={form.data.order_status_id}
-                            onValueChange={(value) =>
-                                form.setData('order_status_id', value)
-                            }
-                        >
-                            <SelectTrigger
-                                id="order-status"
-                                className="w-full justify-between"
+            <Frame className="[--frame-radius:var(--radius-xl)]">
+                <FramePanel className="flex flex-col gap-4">
+                    <OrderPhonesField
+                        phones={form.data.phones}
+                        maxExtra={options.maxExtraPhones}
+                        errors={errors}
+                        onChange={(phones) => form.setData('phones', phones)}
+                        beside={
+                            <FormField
+                                label="Имя клиента"
+                                error={errors.contact_name}
                             >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent
-                                position="popper"
-                                className="min-w-48"
-                            >
-                                <SelectGroup>
-                                    {options.statuses.map((item) => (
-                                        <SelectItem
-                                            key={item.id}
-                                            value={String(item.id)}
-                                        >
-                                            <OrderStatusDot color={item.color}>
-                                                {inactive(
-                                                    item.name,
-                                                    item.active,
-                                                )}
-                                            </OrderStatusDot>
-                                        </SelectItem>
-                                    ))}
-                                </SelectGroup>
-                            </SelectContent>
-                        </Select>
-                    </FormField>
+                                <Input
+                                    id="order-contact-name"
+                                    value={form.data.contact_name}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'contact_name',
+                                            event.target.value,
+                                        )
+                                    }
+                                    maxLength={150}
+                                    autoComplete="off"
+                                />
+                            </FormField>
+                        }
+                    />
 
-                    {canAssign && options.responsibles ? (
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <FormField label="Источник">
+                            <Input
+                                id="order-source"
+                                value={order.source.name}
+                                disabled
+                                readOnly
+                            />
+                        </FormField>
                         <FormField
-                            label="Ответственный"
-                            error={errors.responsible_id}
+                            label="Тип заявки"
+                            error={errors.contact_channel_id}
                         >
                             <Select
-                                value={form.data.responsible_id}
+                                value={form.data.contact_channel_id}
                                 onValueChange={(value) =>
-                                    form.setData('responsible_id', value)
+                                    form.setData('contact_channel_id', value)
                                 }
                             >
                                 <SelectTrigger
-                                    id="order-responsible"
+                                    id="order-channel"
                                     className="w-full"
                                 >
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent position="popper">
                                     <SelectGroup>
-                                        <SelectItem value={NONE}>
-                                            Не назначен
-                                        </SelectItem>
-                                        {options.responsibles.map((user) => (
+                                        {options.channels.map((channel) => (
                                             <SelectItem
-                                                key={user.id}
-                                                value={String(user.id)}
+                                                key={channel.id}
+                                                value={String(channel.id)}
                                             >
                                                 {inactive(
-                                                    user.name,
-                                                    user.active,
+                                                    channel.name,
+                                                    channel.active,
                                                 )}
                                             </SelectItem>
                                         ))}
@@ -472,172 +504,295 @@ function OrderEditForm({
                                 </SelectContent>
                             </Select>
                         </FormField>
-                    ) : (
-                        <Fact label="Ответственный">
-                            {order.responsible
-                                ? inactive(
-                                      order.responsible.name,
-                                      order.responsible.active,
-                                  )
-                                : 'не назначен'}
-                        </Fact>
-                    )}
-
-                    {showCallback && (
                         <FormField
-                            label="Перезвонить"
-                            error={errors.callback_at}
+                            label="Способ оплаты"
+                            error={errors.payment_method_id}
                         >
-                            <Input
-                                id="order-callback-at"
-                                type="datetime-local"
-                                value={form.data.callback_at}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'callback_at',
-                                        event.target.value,
-                                    )
+                            <Select
+                                value={form.data.payment_method_id}
+                                onValueChange={(value) =>
+                                    form.setData('payment_method_id', value)
                                 }
-                                required={status?.requires_callback_at}
-                            />
-                        </FormField>
-                    )}
-
-                    {showArrival && (
-                        <FormField
-                            label="Дата приезда"
-                            error={errors.arrival_at}
-                        >
-                            <Input
-                                id="order-arrival-at"
-                                type="datetime-local"
-                                value={form.data.arrival_at}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'arrival_at',
-                                        event.target.value,
-                                    )
-                                }
-                                required={status?.requires_arrival_at}
-                            />
-                        </FormField>
-                    )}
-
-                    {reasonType && (
-                        <>
-                            <FormField
-                                label={options.reasonTitles[reasonType]}
-                                error={errors.reason_id}
                             >
-                                <Select
-                                    value={form.data.reason_id}
-                                    onValueChange={(value) =>
-                                        form.setData('reason_id', value)
-                                    }
+                                <SelectTrigger
+                                    id="order-payment-method"
+                                    className="w-full"
                                 >
-                                    <SelectTrigger
-                                        id="order-reason"
-                                        className="w-full"
-                                        aria-required
-                                    >
-                                        <SelectValue placeholder="Выберите причину" />
-                                    </SelectTrigger>
-                                    <SelectContent position="popper">
-                                        <SelectGroup>
-                                            {reasons.map((item) => (
-                                                <SelectItem
-                                                    key={item.id}
-                                                    value={String(item.id)}
+                                    <SelectValue placeholder="Не выбран" />
+                                </SelectTrigger>
+                                <SelectContent position="popper">
+                                    <SelectGroup>
+                                        {options.paymentMethods.map((item) => (
+                                            <SelectItem
+                                                key={item.id}
+                                                value={String(item.id)}
+                                            >
+                                                {inactive(
+                                                    item.name,
+                                                    item.active,
+                                                )}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <FormField
+                            label="Статус"
+                            error={errors.order_status_id}
+                        >
+                            <Select
+                                value={form.data.order_status_id}
+                                onValueChange={(value) =>
+                                    form.setData('order_status_id', value)
+                                }
+                            >
+                                <SelectTrigger
+                                    id="order-status"
+                                    className="w-full justify-between"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent
+                                    position="popper"
+                                    className="min-w-48"
+                                >
+                                    <SelectGroup>
+                                        {options.statuses.map((item) => (
+                                            <SelectItem
+                                                key={item.id}
+                                                value={String(item.id)}
+                                            >
+                                                <OrderStatusDot
+                                                    color={item.color}
                                                 >
                                                     {inactive(
                                                         item.name,
                                                         item.active,
                                                     )}
-                                                </SelectItem>
-                                            ))}
+                                                </OrderStatusDot>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+
+                        {canAssign && options.responsibles ? (
+                            <FormField
+                                label="Ответственный"
+                                error={errors.responsible_id}
+                            >
+                                <Select
+                                    value={form.data.responsible_id}
+                                    onValueChange={(value) =>
+                                        form.setData('responsible_id', value)
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="order-responsible"
+                                        className="w-full"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent position="popper">
+                                        <SelectGroup>
+                                            <SelectItem value={NONE}>
+                                                Не назначен
+                                            </SelectItem>
+                                            {options.responsibles.map(
+                                                (user) => (
+                                                    <SelectItem
+                                                        key={user.id}
+                                                        value={String(user.id)}
+                                                    >
+                                                        {inactive(
+                                                            user.name,
+                                                            user.active,
+                                                        )}
+                                                    </SelectItem>
+                                                ),
+                                            )}
                                         </SelectGroup>
                                     </SelectContent>
                                 </Select>
                             </FormField>
+                        ) : (
+                            <Fact label="Ответственный">
+                                {order.responsible
+                                    ? inactive(
+                                          order.responsible.name,
+                                          order.responsible.active,
+                                      )
+                                    : 'не назначен'}
+                            </Fact>
+                        )}
+
+                        {showCallback && (
                             <FormField
-                                label="Пояснение к причине"
-                                error={errors.reason_comment}
+                                label={
+                                    <>
+                                        Перезвонить
+                                        {status?.requires_callback_at && (
+                                            <span className="text-destructive">
+                                                *
+                                            </span>
+                                        )}
+                                    </>
+                                }
+                                error={errors.callback_at}
                             >
-                                <Textarea
-                                    id="order-reason-comment"
-                                    value={form.data.reason_comment}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'reason_comment',
-                                            event.target.value,
-                                        )
+                                <DateTimePicker
+                                    id="order-callback-at"
+                                    value={form.data.callback_at}
+                                    onChange={(value) =>
+                                        form.setData('callback_at', value)
                                     }
-                                    required={reason?.comment_required}
-                                    maxLength={2000}
-                                    rows={2}
+                                    aria-invalid={
+                                        errors.callback_at ? true : undefined
+                                    }
                                 />
                             </FormField>
-                        </>
-                    )}
-                </div>
-            </FormSection>
+                        )}
 
-            <FormSection title="Контакт">
-                <div className="grid gap-4 md:grid-cols-2">
-                    <FormField label="Имя" error={errors.contact_name}>
-                        <Input
-                            id="order-contact-name"
-                            value={form.data.contact_name}
-                            onChange={(event) =>
-                                form.setData('contact_name', event.target.value)
-                            }
-                            maxLength={150}
-                            autoComplete="off"
-                        />
-                    </FormField>
-                    <FormField
-                        label="Тип заявки"
-                        error={errors.contact_channel_id}
-                    >
-                        <Select
-                            value={form.data.contact_channel_id}
-                            onValueChange={(value) =>
-                                form.setData('contact_channel_id', value)
-                            }
-                        >
-                            <SelectTrigger
-                                id="order-channel"
-                                className="w-full"
+                        {showArrival && (
+                            <FormField
+                                label={
+                                    <>
+                                        Дата приезда
+                                        {status?.requires_arrival_at && (
+                                            <span className="text-destructive">
+                                                *
+                                            </span>
+                                        )}
+                                    </>
+                                }
+                                error={errors.arrival_at}
                             >
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent position="popper">
-                                <SelectGroup>
-                                    {options.channels.map((channel) => (
-                                        <SelectItem
-                                            key={channel.id}
-                                            value={String(channel.id)}
-                                        >
-                                            {inactive(
-                                                channel.name,
-                                                channel.active,
+                                <DateTimePicker
+                                    id="order-arrival-at"
+                                    value={form.data.arrival_at}
+                                    onChange={(value) =>
+                                        form.setData('arrival_at', value)
+                                    }
+                                    aria-invalid={
+                                        errors.arrival_at ? true : undefined
+                                    }
+                                />
+                            </FormField>
+                        )}
+
+                        {showVisitResult && (
+                            <FormField
+                                label={
+                                    <>
+                                        Итог визита
+                                        {status?.requires_visit_result && (
+                                            <span className="text-destructive">
+                                                *
+                                            </span>
+                                        )}
+                                    </>
+                                }
+                                error={errors.visit_result_id}
+                            >
+                                <Select
+                                    value={form.data.visit_result_id}
+                                    onValueChange={(value) =>
+                                        form.setData('visit_result_id', value)
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="order-visit-result"
+                                        className="w-full"
+                                        aria-required={
+                                            status?.requires_visit_result
+                                        }
+                                    >
+                                        <SelectValue placeholder="Выберите итог визита" />
+                                    </SelectTrigger>
+                                    <SelectContent position="popper">
+                                        <SelectGroup>
+                                            {options.visitResults.map(
+                                                (item) => (
+                                                    <SelectItem
+                                                        key={item.id}
+                                                        value={String(item.id)}
+                                                    >
+                                                        {inactive(
+                                                            item.name,
+                                                            item.active,
+                                                        )}
+                                                    </SelectItem>
+                                                ),
                                             )}
-                                        </SelectItem>
-                                    ))}
-                                </SelectGroup>
-                            </SelectContent>
-                        </Select>
-                    </FormField>
-                    <div className="md:col-span-2">
-                        <OrderPhonesField
-                            phones={form.data.phones}
-                            maxExtra={options.maxExtraPhones}
-                            errors={errors}
-                            onChange={(phones) =>
-                                form.setData('phones', phones)
-                            }
-                        />
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                        )}
+
+                        {reasonType && (
+                            <>
+                                <FormField
+                                    label={options.reasonTitles[reasonType]}
+                                    error={errors.reason_id}
+                                >
+                                    <Select
+                                        value={form.data.reason_id}
+                                        onValueChange={(value) =>
+                                            form.setData('reason_id', value)
+                                        }
+                                    >
+                                        <SelectTrigger
+                                            id="order-reason"
+                                            className="w-full"
+                                            aria-required
+                                        >
+                                            <SelectValue placeholder="Выберите причину" />
+                                        </SelectTrigger>
+                                        <SelectContent position="popper">
+                                            <SelectGroup>
+                                                {reasons.map((item) => (
+                                                    <SelectItem
+                                                        key={item.id}
+                                                        value={String(item.id)}
+                                                    >
+                                                        {inactive(
+                                                            item.name,
+                                                            item.active,
+                                                        )}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectGroup>
+                                        </SelectContent>
+                                    </Select>
+                                </FormField>
+                                <FormField
+                                    label="Пояснение к причине"
+                                    error={errors.reason_comment}
+                                >
+                                    <Textarea
+                                        id="order-reason-comment"
+                                        value={form.data.reason_comment}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'reason_comment',
+                                                event.target.value,
+                                            )
+                                        }
+                                        required={reason?.comment_required}
+                                        maxLength={2000}
+                                        rows={2}
+                                    />
+                                </FormField>
+                            </>
+                        )}
                     </div>
+
                     <FormField
                         label="Интерес к автомобилю"
                         error={errors.car_interest}
@@ -652,23 +807,8 @@ function OrderEditForm({
                             rows={3}
                         />
                     </FormField>
-                </div>
-            </FormSection>
-
-            <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!form.isDirty || form.processing}
-                    onClick={() => form.reset()}
-                >
-                    Отменить изменения
-                </Button>
-                <Button type="submit" disabled={form.processing}>
-                    {form.processing && <Spinner />}
-                    Сохранить
-                </Button>
-            </div>
+                </FramePanel>
+            </Frame>
         </form>
     );
 }
@@ -688,11 +828,21 @@ function OrderReadOnly({ order }: { order: OrderCard }) {
                         .join(', ')}
                 </Fact>
                 <Fact label="Тип заявки">{order.channel.name}</Fact>
+                <Fact label="Способ оплаты">
+                    {order.payment_method?.name ?? '—'}
+                </Fact>
                 <Fact label="Ответственный">
                     {order.responsible?.name ?? 'не назначен'}
                 </Fact>
-                <Fact label="Перезвонить">{formatLocal(order.callback_at)}</Fact>
-                <Fact label="Дата приезда">{formatLocal(order.arrival_at)}</Fact>
+                <Fact label="Перезвонить">
+                    {formatLocal(order.callback_at)}
+                </Fact>
+                <Fact label="Дата приезда">
+                    {formatLocal(order.arrival_at)}
+                </Fact>
+                {order.visit_result && (
+                    <Fact label="Итог визита">{order.visit_result.name}</Fact>
+                )}
                 {order.reason && (
                     <Fact label="Причина">
                         {order.reason.name}
@@ -1163,17 +1313,24 @@ export default function OrderShow({
     transferShowrooms,
 }: Props) {
     const title = `Заявка №${order.id}`;
+    const mainPhone = order.phones.at(0)?.value;
     const [transferOpen, setTransferOpen] = useState(false);
     const editing = useRef(false);
     const onEditing = useCallback((value: boolean) => {
         editing.current = value;
     }, []);
+    const [saving, setSaving] = useState(false);
+    const goBack = () => {
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            router.visit(ordersIndex());
+        }
+    };
     const [outdatedAt, setOutdatedAt] = useState<number | null>(null);
     const outdated = outdatedAt === order.lock_version;
     const callsLoaded = calls !== undefined;
-    const reloadCard = useCoalesced(() =>
-        router.reload({ only: SAVED_PROPS }),
-    );
+    const reloadCard = useCoalesced(() => router.reload({ only: SAVED_PROPS }));
     const reloadCalls = useCoalesced(() => router.reload({ only: ['calls'] }));
     const reloadMissed = useCoalesced(() =>
         router.reload({ only: ['missedCalls'] }),
@@ -1261,229 +1418,309 @@ export default function OrderShow({
     return (
         <>
             <Head title={title} />
-            <PageBody fluid>
-                <PageHeader
-                    title={title}
-                    description={
-                        <span className="flex flex-wrap items-center gap-2">
-                            <OrderStatusBadge color={order.status.color}>
-                                {order.status.name}
-                            </OrderStatusBadge>
-                            <OrderRepeatBadge count={order.repeat_number} />
-                            <Badge variant="outline">{order.origin}</Badge>
-                            {order.transfer_out && (
-                                <Badge variant="info-light">
-                                    Передано в {order.transfer_out.showroom}
-                                </Badge>
-                            )}
-                            {order.transfer_in && (
-                                <Badge variant="info-light">
-                                    Получено из {order.transfer_in.showroom}
-                                </Badge>
-                            )}
-                        </span>
-                    }
-                    actions={
-                        (can.take || can.transfer) && (
-                            <div className="flex flex-wrap gap-2">
-                                {can.take && (
-                                    <TakeButton
-                                        orderId={order.id}
-                                        only={SAVED_PROPS}
-                                    />
-                                )}
-                                {can.transfer && (
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => setTransferOpen(true)}
-                                    >
-                                        <Send />
-                                        Передать в другой салон
-                                    </Button>
-                                )}
+            <div className="flex min-h-0 flex-1 flex-col">
+                <div
+                    scroll-region=""
+                    className="flex min-h-0 flex-1 scroll-fade-y flex-col overflow-y-auto"
+                >
+                    <div className="grid flex-1 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
+                        <div className="flex min-w-0 flex-col gap-4 p-4">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="flex min-w-0 flex-col gap-0.5">
+                                    <h1 className="text-2xl leading-tight font-semibold tracking-tight">
+                                        {title}
+                                    </h1>
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                                        <span className="flex min-w-0 items-center gap-1.5">
+                                            <ReferenceIcon
+                                                name={order.source_icon}
+                                                color={order.source_icon_color}
+                                                className="size-5 rounded-md [&_svg]:size-3"
+                                            />
+                                            <span className="truncate">
+                                                {order.source.name}
+                                            </span>
+                                        </span>
+                                        <span className="flex items-center gap-1.5 tabular-nums">
+                                            <Clock className="size-3.5" />
+                                            {formatMoment(order.received_at)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {can.take && (
+                                        <TakeButton
+                                            orderId={order.id}
+                                            only={SAVED_PROPS}
+                                        />
+                                    )}
+                                    {mainPhone && (
+                                        <>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="icon"
+                                                        asChild
+                                                    >
+                                                        <a
+                                                            href={`sms:+${mainPhone}`}
+                                                            aria-label="Написать СМС"
+                                                        >
+                                                            <MessageSquareText />
+                                                        </a>
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    Написать СМС
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Button
+                                                className="bg-success text-white hover:bg-success/90"
+                                                asChild
+                                            >
+                                                <a href={`tel:+${mainPhone}`}>
+                                                    <Phone data-icon="inline-start" />
+                                                    Позвонить
+                                                </a>
+                                            </Button>
+                                        </>
+                                    )}
+                                </div>
                             </div>
-                        )
-                    }
-                />
 
-                {(order.transfer_out || order.transfer_in) && (
-                    <FormSection title="Передача между салонами">
-                        <div className="flex flex-col gap-4">
-                            {order.transfer_in && (
-                                <TransferFact
-                                    label="Получено из салона"
-                                    transfer={order.transfer_in}
+                            {(order.transfer_out || order.transfer_in) && (
+                                <FormSection title="Передача между салонами">
+                                    <div className="flex flex-col gap-4">
+                                        {order.transfer_in && (
+                                            <TransferFact
+                                                label="Получено из салона"
+                                                transfer={order.transfer_in}
+                                            />
+                                        )}
+                                        {order.transfer_out && (
+                                            <TransferFact
+                                                label="Передано в салон"
+                                                transfer={order.transfer_out}
+                                            />
+                                        )}
+                                    </div>
+                                </FormSection>
+                            )}
+
+                            <MissedCallsSection
+                                orderId={order.id}
+                                calls={missedCalls}
+                                canHandle={can.update}
+                            />
+
+                            {order.site_request && (
+                                <SiteRequestSection
+                                    request={order.site_request}
                                 />
                             )}
-                            {order.transfer_out && (
-                                <TransferFact
-                                    label="Передано в салон"
-                                    transfer={order.transfer_out}
+
+                            {outdated && (
+                                <Alert variant="warning">
+                                    <TriangleAlert />
+                                    <AlertTitle>
+                                        Данные изменились, обновите карточку
+                                    </AlertTitle>
+                                    <AlertDescription>
+                                        Заявку изменили, пока вы её
+                                        редактировали. Несохранённые правки при
+                                        обновлении будут потеряны.
+                                    </AlertDescription>
+                                    <AlertAction>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                router.reload({
+                                                    only: SAVED_PROPS,
+                                                })
+                                            }
+                                        >
+                                            <RotateCw />
+                                            Обновить
+                                        </Button>
+                                    </AlertAction>
+                                </Alert>
+                            )}
+
+                            {can.update && options ? (
+                                <OrderEditForm
+                                    key={order.lock_version}
+                                    order={order}
+                                    options={options}
+                                    canAssign={can.assign}
+                                    onEditing={onEditing}
+                                    onProcessing={setSaving}
                                 />
+                            ) : (
+                                <OrderReadOnly order={order} />
+                            )}
+
+                            {previous && (
+                                <FormSection
+                                    title="Предыдущие обращения в салоне"
+                                    actions={
+                                        can.crossShowroom &&
+                                        crossShowroom === undefined && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() =>
+                                                    loadSection('crossShowroom')
+                                                }
+                                            >
+                                                <Building2 />
+                                                Обращения в других салонах
+                                            </Button>
+                                        )
+                                    }
+                                >
+                                    <RelatedOrdersTable
+                                        rows={previous}
+                                        emptyMessage="Это первое обращение клиента в салон."
+                                    />
+                                </FormSection>
+                            )}
+
+                            {crossShowroom && (
+                                <FormSection
+                                    title="Обращения в других салонах"
+                                    description="Только салоны из вашей области доступа. Не влияет на счётчик повторов."
+                                >
+                                    <RelatedOrdersTable
+                                        rows={crossShowroom}
+                                        showShowroom
+                                        emptyMessage="В других доступных салонах обращений нет."
+                                    />
+                                </FormSection>
+                            )}
+
+                            {can.history && <CallsSection calls={calls} />}
+                            {can.history && (
+                                <HistorySection history={history} />
                             )}
                         </div>
-                    </FormSection>
-                )}
 
-                <FormSection title="Основное">
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <Fact label="Салон">{order.showroom.name}</Fact>
-                        <Fact label="Источник">
-                            {inactive(order.source.name, order.source.active)}
-                        </Fact>
-                        <Fact label="Тип заявки">
-                            {inactive(order.channel.name, order.channel.active)}
-                        </Fact>
-                        <Fact label="Поступила">
-                            {formatMoment(order.received_at)}
-                        </Fact>
-                        <Fact label="Бизнес-дата">
-                            {formatBusinessDate(order.business_date)}
-                            <span className="text-xs text-muted-foreground">
-                                {' '}
-                                (
-                                {order.business_day_rule.boundary
-                                    ? `граница ${order.business_day_rule.boundary}`
-                                    : 'календарный день'}
-                                , {order.business_day_rule.timezone})
-                            </span>
-                        </Fact>
-                        <Fact label="Создал">{order.creator ?? '—'}</Fact>
-                        <Fact label="Изменена">
-                            {formatMoment(order.updated_at)}
-                        </Fact>
-                    </div>
-                </FormSection>
-
-                <MissedCallsSection
-                    orderId={order.id}
-                    calls={missedCalls}
-                    canHandle={can.update}
-                />
-
-                {order.site_request && (
-                    <SiteRequestSection request={order.site_request} />
-                )}
-
-                {(order.distribution || can.distribute) && (
-                    <FormSection
-                        title="Распределение"
-                        actions={
-                            can.distribute && (
-                                <DistributeButton
-                                    orderId={order.id}
-                                    label={
-                                        order.distribution?.state === 'pending'
-                                            ? 'Повторить распределение'
-                                            : 'Отправить в распределение'
-                                    }
-                                    only={SAVED_PROPS}
-                                />
-                            )
-                        }
-                    >
-                        {order.distribution ? (
-                            <Fact label="Состояние">
-                                {order.distribution.label}
-                            </Fact>
-                        ) : (
-                            <p className="text-sm text-muted-foreground">
-                                Ответственный не назначен. Заявку можно передать
-                                в распределение по графикам операторов.
-                            </p>
-                        )}
-                    </FormSection>
-                )}
-
-                {outdated && (
-                    <Alert variant="warning">
-                        <TriangleAlert />
-                        <AlertTitle>
-                            Данные изменились, обновите карточку
-                        </AlertTitle>
-                        <AlertDescription>
-                            Заявку изменили, пока вы её редактировали.
-                            Несохранённые правки при обновлении будут потеряны.
-                        </AlertDescription>
-                        <AlertAction>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                    router.reload({ only: SAVED_PROPS })
-                                }
-                            >
-                                <RotateCw />
-                                Обновить
-                            </Button>
-                        </AlertAction>
-                    </Alert>
-                )}
-
-                {can.update && options ? (
-                    <OrderEditForm
-                        key={order.lock_version}
-                        order={order}
-                        options={options}
-                        canAssign={can.assign}
-                        onEditing={onEditing}
-                    />
-                ) : (
-                    <OrderReadOnly order={order} />
-                )}
-
-                <CommentsSection
-                    order={order}
-                    comments={comments}
-                    canComment={can.comment}
-                />
-
-                {previous && (
-                    <FormSection
-                        title="Предыдущие обращения в салоне"
-                        actions={
-                            can.crossShowroom &&
-                            crossShowroom === undefined && (
+                        <aside className="flex min-w-0 flex-col gap-4 border-t border-border/60 p-4 lg:border-t-0 lg:border-l">
+                            {can.transfer && (
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                        loadSection('crossShowroom')
+                                    className="w-full"
+                                    onClick={() => setTransferOpen(true)}
+                                >
+                                    <Send />
+                                    Передать в другой салон
+                                </Button>
+                            )}
+                            <FormSection title="Основное">
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                                    <Fact label="Салон">
+                                        {order.showroom.name}
+                                    </Fact>
+                                    <Fact label="Источник">
+                                        {inactive(
+                                            order.source.name,
+                                            order.source.active,
+                                        )}
+                                    </Fact>
+                                    <Fact label="Тип заявки">
+                                        {inactive(
+                                            order.channel.name,
+                                            order.channel.active,
+                                        )}
+                                    </Fact>
+                                    <Fact label="Поступила">
+                                        {formatMoment(order.received_at)}
+                                    </Fact>
+                                    <Fact label="Бизнес-дата">
+                                        {formatBusinessDate(
+                                            order.business_date,
+                                        )}
+                                        <span className="text-xs text-muted-foreground">
+                                            {' '}
+                                            (
+                                            {order.business_day_rule.boundary
+                                                ? `граница ${order.business_day_rule.boundary}`
+                                                : 'календарный день'}
+                                            , {order.business_day_rule.timezone}
+                                            )
+                                        </span>
+                                    </Fact>
+                                    <Fact label="Создал">
+                                        {order.creator ?? '—'}
+                                    </Fact>
+                                    <Fact label="Изменена">
+                                        {formatMoment(order.updated_at)}
+                                    </Fact>
+                                </div>
+                            </FormSection>
+
+                            {(order.distribution || can.distribute) && (
+                                <FormSection
+                                    title="Распределение"
+                                    actions={
+                                        can.distribute && (
+                                            <DistributeButton
+                                                orderId={order.id}
+                                                label={
+                                                    order.distribution
+                                                        ?.state === 'pending'
+                                                        ? 'Повторить распределение'
+                                                        : 'Отправить в распределение'
+                                                }
+                                                only={SAVED_PROPS}
+                                            />
+                                        )
                                     }
                                 >
-                                    <Building2 />
-                                    Обращения в других салонах
-                                </Button>
-                            )
-                        }
-                    >
-                        <RelatedOrdersTable
-                            rows={previous}
-                            emptyMessage="Это первое обращение клиента в салон."
-                        />
-                    </FormSection>
-                )}
+                                    {order.distribution ? (
+                                        <Fact label="Состояние">
+                                            {order.distribution.label}
+                                        </Fact>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">
+                                            Ответственный не назначен. Заявку
+                                            можно передать в распределение по
+                                            графикам операторов.
+                                        </p>
+                                    )}
+                                </FormSection>
+                            )}
 
-                {crossShowroom && (
-                    <FormSection
-                        title="Обращения в других салонах"
-                        description="Только салоны из вашей области доступа. Не влияет на счётчик повторов."
-                    >
-                        <RelatedOrdersTable
-                            rows={crossShowroom}
-                            showShowroom
-                            emptyMessage="В других доступных салонах обращений нет."
-                        />
-                    </FormSection>
-                )}
+                            <CommentsSection
+                                order={order}
+                                comments={comments}
+                                canComment={can.comment}
+                            />
+                        </aside>
+                    </div>
+                </div>
 
-                {can.history && <CallsSection calls={calls} />}
-                {can.history && <HistorySection history={history} />}
-            </PageBody>
+                <footer className="flex h-12 shrink-0 items-center justify-end gap-2 border-t border-border/60 bg-background px-4">
+                    <Button type="button" variant="outline" onClick={goBack}>
+                        <ArrowLeft />
+                        Назад
+                    </Button>
+                    {can.update && options && (
+                        <Button
+                            type="submit"
+                            form={EDIT_FORM_ID}
+                            disabled={saving}
+                        >
+                            {saving && <Spinner />}
+                            Сохранить
+                        </Button>
+                    )}
+                </footer>
+            </div>
 
             <TransferDialog
                 open={transferOpen}

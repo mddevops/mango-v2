@@ -17,10 +17,12 @@ use App\Models\OrderDropReason;
 use App\Models\OrderPhone;
 use App\Models\OrderStatus;
 use App\Models\OrderTrashReason;
+use App\Models\PaymentMethod;
 use App\Models\Showroom;
 use App\Models\SiteCallbackRequest;
 use App\Models\Source;
 use App\Models\User;
+use App\Models\VisitResult;
 use App\Services\Concerns\HandlesUniqueConstraints;
 use App\Support\OrderReasonType;
 use App\Support\Phone;
@@ -36,8 +38,8 @@ use Illuminate\Validation\ValidationException;
  * the name it was given. `responsible_id` is present only when the actor may choose;
  * `assign_any` widens the choice from the order's showroom to every showroom.
  *
- * @phpstan-type CreateData array{showroom_id?: int|null, source_id: int, contact_channel_id: int, contact_name: string|null, phones: list<string>, phone_names: array<string, string|null>, car_interest: string|null, order_status_id?: int|null, callback_at?: string|null, arrival_at?: string|null, reason_id?: int|null, reason_comment?: string|null, comment?: string|null, responsible_id?: int|null, assign_any?: bool}
- * @phpstan-type UpdateData array{contact_channel_id: int, contact_name: string|null, phones: list<string>, phone_names: array<string, string|null>, car_interest: string|null, order_status_id: int, callback_at: string|null, arrival_at: string|null, reason_id: int|null, reason_comment: string|null, lock_version: int, responsible_id?: int|null, assign_any?: bool}
+ * @phpstan-type CreateData array{showroom_id?: int|null, source_id: int, contact_channel_id: int, payment_method_id?: int|null, contact_name: string|null, phones: list<string>, phone_names: array<string, string|null>, car_interest: string|null, order_status_id?: int|null, callback_at?: string|null, arrival_at?: string|null, visit_result_id?: int|null, reason_id?: int|null, reason_comment?: string|null, comment?: string|null, responsible_id?: int|null, assign_any?: bool}
+ * @phpstan-type UpdateData array{contact_channel_id: int, payment_method_id?: int|null, contact_name: string|null, phones: list<string>, phone_names: array<string, string|null>, car_interest: string|null, order_status_id: int, callback_at: string|null, arrival_at: string|null, visit_result_id?: int|null, reason_id: int|null, reason_comment: string|null, lock_version: int, responsible_id?: int|null, assign_any?: bool}
  */
 class OrderManager
 {
@@ -48,6 +50,10 @@ class OrderManager
     public const PHONE_TAKEN = 'Номер относится к другому клиенту. Автоматическое объединение клиентов не выполняется.';
 
     public const RESPONSIBLE_INVALID = 'Выберите активного сотрудника, которого вам разрешено назначить.';
+
+    public const PAYMENT_METHOD_INVALID = 'Выберите активный способ оплаты.';
+
+    public const VISIT_RESULT_INVALID = 'Выберите активный итог визита.';
 
     public const ALREADY_TAKEN = 'Заявку уже взял в работу или назначил другой сотрудник. Обновите страницу.';
 
@@ -199,7 +205,7 @@ class OrderManager
             /** @var Order $locked */
             $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
             $locked->ensureLockVersion($data['lock_version']);
-            $locked->load(['showroom', 'channel', 'status', 'responsible', 'trashReason', 'dropReason', 'additionalPhones']);
+            $locked->load(['showroom', 'channel', 'paymentMethod', 'visitResult', 'status', 'responsible', 'trashReason', 'dropReason', 'additionalPhones']);
 
             $timezone = $locked->showroom->timezone;
             $phones = $this->uniquePhones($data['phones']);
@@ -221,17 +227,31 @@ class OrderManager
                 $errors['contact_channel_id'] = 'Тип заявки отключён или не разрешён для источника заявки.';
             }
 
+            $paymentMethodId = array_key_exists('payment_method_id', $data) ? $data['payment_method_id'] : $locked->payment_method_id;
+
+            if ($paymentMethodId !== $locked->payment_method_id && ! $this->paymentMethodAllowed($paymentMethodId)) {
+                $errors['payment_method_id'] = self::PAYMENT_METHOD_INVALID;
+            }
+
+            $visitResultId = array_key_exists('visit_result_id', $data) ? $data['visit_result_id'] : $locked->visit_result_id;
+
+            if ($visitResultId !== $locked->visit_result_id && ! $this->visitResultAllowed($visitResultId)) {
+                $errors['visit_result_id'] = self::VISIT_RESULT_INVALID;
+            }
+
             $callbackAt = $this->parseLocal($data['callback_at'], $timezone);
             $arrivalAt = $this->parseLocal($data['arrival_at'], $timezone);
 
             $locked->fill([
                 'contact_channel_id' => $data['contact_channel_id'],
+                'payment_method_id' => $paymentMethodId,
                 'contact_name' => $data['contact_name'],
                 'phone' => $phones[0],
                 'car_interest' => $data['car_interest'],
                 'order_status_id' => $status?->id ?? $locked->order_status_id,
                 'callback_at' => $callbackAt,
                 'arrival_at' => $arrivalAt,
+                'visit_result_id' => $visitResultId,
             ]);
 
             if ($status !== null) {
@@ -271,7 +291,7 @@ class OrderManager
                 $this->syncAdditionalPhones($locked, $phones, $data['phone_names']);
             }
 
-            $locked->unsetRelations()->load(['channel', 'status', 'responsible', 'trashReason', 'dropReason']);
+            $locked->unsetRelations()->load(['channel', 'paymentMethod', 'visitResult', 'status', 'responsible', 'trashReason', 'dropReason']);
             $after = $this->snapshot($locked, $phones, $data['phone_names']);
             $this->recordChanges($locked, $before, $after);
 
@@ -410,6 +430,18 @@ class OrderManager
             throw ValidationException::withMessages(['contact_channel_id' => 'Тип заявки отключён или не разрешён для выбранного источника.']);
         }
 
+        $paymentMethodId = $data['payment_method_id'] ?? null;
+
+        if ($paymentMethodId !== null && ! $this->paymentMethodAllowed($paymentMethodId)) {
+            throw ValidationException::withMessages(['payment_method_id' => self::PAYMENT_METHOD_INVALID]);
+        }
+
+        $visitResultId = $data['visit_result_id'] ?? null;
+
+        if (! $this->visitResultAllowed($visitResultId)) {
+            throw ValidationException::withMessages(['visit_result_id' => self::VISIT_RESULT_INVALID]);
+        }
+
         $statusId = $data['order_status_id'] ?? null;
         $status = $statusId === null
             ? OrderStatus::query()->where('is_initial', true)->where('active', true)->sharedLock()->first()
@@ -440,6 +472,7 @@ class OrderManager
             'order_status_id' => $status->id,
             'callback_at' => $this->parseLocal($data['callback_at'] ?? null, $timezone),
             'arrival_at' => $this->parseLocal($data['arrival_at'] ?? null, $timezone),
+            'visit_result_id' => $visitResultId,
         ]);
         $errors = $this->applyRequirements($order, $status, true, [
             'reason_id' => $data['reason_id'] ?? null,
@@ -461,6 +494,7 @@ class OrderManager
             'client_id' => $client->id,
             'source_id' => $source->id,
             'contact_channel_id' => $data['contact_channel_id'],
+            'payment_method_id' => $paymentMethodId,
             'origin' => OrderOrigin::Manual,
             'contact_name' => $data['contact_name'],
             'phone' => $phones[0],
@@ -481,6 +515,7 @@ class OrderManager
             'showroom' => $source->showroom->name,
             'source' => $source->name,
             'channel' => ContactChannel::query()->whereKey($data['contact_channel_id'])->value('name'),
+            'payment_method' => $paymentMethodId === null ? null : PaymentMethod::query()->whereKey($paymentMethodId)->value('name'),
             'status' => $status->name,
             'responsible' => $responsibleId === null ? null : User::query()->whereKey($responsibleId)->value('name'),
             'contact_name' => $order->contact_name,
@@ -488,6 +523,7 @@ class OrderManager
             'car_interest' => $order->car_interest,
             'callback_at' => $this->formatLocal($order->callback_at, $timezone, self::LABELS_FORMAT),
             'arrival_at' => $this->formatLocal($order->arrival_at, $timezone, self::LABELS_FORMAT),
+            'visit_result' => $visitResultId === null ? null : VisitResult::query()->whereKey($visitResultId)->value('name'),
             'reason' => $order->reason()?->name,
             'reason_comment' => $order->reason_comment,
             'business_date' => $day->date,
@@ -718,6 +754,10 @@ class OrderManager
             $errors['arrival_at'] = "Для статуса «{$status->name}» укажите дату и время приезда.";
         }
 
+        if ($status->requires_visit_result && $order->visit_result_id === null && ($statusChanged || $order->isDirty('visit_result_id'))) {
+            $errors['visit_result_id'] = "Для статуса «{$status->name}» выберите итог визита.";
+        }
+
         $type = $status->required_reason;
 
         $reasonId = $data['reason_id'];
@@ -801,14 +841,26 @@ class OrderManager
             'contact_name' => $order->contact_name,
             'phones' => $this->phoneList($phones, $names),
             'channel' => $order->channel->name,
+            'payment_method' => $order->paymentMethod?->name,
             'status' => $order->status->name,
             'responsible' => $order->responsible?->name,
             'callback_at' => $this->formatLocal($order->callback_at, $timezone, self::LABELS_FORMAT),
             'arrival_at' => $this->formatLocal($order->arrival_at, $timezone, self::LABELS_FORMAT),
+            'visit_result' => $order->visitResult?->name,
             'car_interest' => $order->car_interest,
             'reason' => $order->reason()?->name,
             'reason_comment' => $order->reason_comment,
         ];
+    }
+
+    private function paymentMethodAllowed(?int $id): bool
+    {
+        return $id === null || PaymentMethod::query()->whereKey($id)->where('active', true)->sharedLock()->exists();
+    }
+
+    private function visitResultAllowed(?int $id): bool
+    {
+        return $id === null || VisitResult::query()->whereKey($id)->where('active', true)->sharedLock()->exists();
     }
 
     private function parseLocal(?string $value, string $timezone): ?CarbonImmutable

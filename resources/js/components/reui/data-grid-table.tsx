@@ -1938,7 +1938,7 @@ function DataGridTableResizeIndicator({
             <div className="absolute inset-y-0 left-0 w-px -translate-x-1/2 bg-primary/85" />
             <div
                 ref={indicatorHeadRef}
-                className="absolute top-0 left-0 -translate-x-1/2 rounded-b-md bg-primary shadow-xs"
+                className="absolute top-0 left-0 -translate-x-1/2 rounded-b-sm bg-primary shadow-xs"
                 style={{ width: 5 }}
             />
         </div>
@@ -1963,9 +1963,9 @@ function DataGridTableBody({ children }: { children: ReactNode }) {
             data-slot="data-grid-table-body"
             className={cn(
                 props.tableLayout?.rowRounded &&
-                    '[&_td:first-child]:rounded-l-2xl',
+                    '[&_td:first-child]:rounded-l-lg',
                 props.tableLayout?.rowRounded &&
-                    '[&_td:last-child]:rounded-r-2xl',
+                    '[&_td:last-child]:rounded-r-lg',
                 props.tableClassNames?.body,
             )}
         >
@@ -2717,7 +2717,7 @@ function DataGridTableLoader() {
 
     return (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div className="flex items-center gap-2 rounded-2xl border bg-card px-4 py-2 text-sm leading-none font-medium text-muted-foreground">
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm leading-none font-medium text-muted-foreground">
                 <Spinner className="size-5 opacity-60" />
                 {props.loadingMessage || i18n.labels.loading}
             </div>
@@ -2748,7 +2748,7 @@ function DataGridTableRowPin<TData extends object>({
                 }
             }}
             className={cn(
-                'inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground',
+                'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground',
                 isPinned && 'text-primary hover:text-primary/80',
             )}
         >
@@ -2898,7 +2898,7 @@ function DataGridTableRowExpand<TData extends object>({
                         row.toggleExpanded();
                     }}
                     className={cn(
-                        'inline-flex items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground',
+                        'inline-flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground',
                         controlSize,
                     )}
                 >

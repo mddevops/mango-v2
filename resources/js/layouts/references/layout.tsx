@@ -7,7 +7,9 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { cn, toUrl } from '@/lib/utils';
 import { index as orderReasonsIndex } from '@/routes/order-reasons';
 import { index as orderStatusesIndex } from '@/routes/order-statuses';
+import { index as paymentMethodsIndex } from '@/routes/payment-methods';
 import { index as sourceReferencesIndex } from '@/routes/source-references';
+import { index as visitResultsIndex } from '@/routes/visit-results';
 import type { NavItem } from '@/types';
 
 type NavGroup = { title: string; items: NavItem[] };
@@ -33,6 +35,14 @@ export default function ReferencesLayout({ children }: PropsWithChildren) {
                           {
                               title: 'Причины отказа / срыва',
                               href: orderReasonsIndex('drop'),
+                          },
+                          {
+                              title: 'Способы оплаты',
+                              href: paymentMethodsIndex(),
+                          },
+                          {
+                              title: 'Итоги визита',
+                              href: visitResultsIndex(),
                           },
                       ],
                   },

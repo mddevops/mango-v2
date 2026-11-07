@@ -16,10 +16,12 @@ use App\Models\Order;
 use App\Models\OrderComment;
 use App\Models\OrderStatus;
 use App\Models\OrderTransfer;
+use App\Models\PaymentMethod;
 use App\Models\Showroom;
 use App\Models\SiteCallbackRequest;
 use App\Models\Source;
 use App\Models\User;
+use App\Models\VisitResult;
 use App\Models\UserPreference;
 use App\Policies\OrderPolicy;
 use App\Services\AccessScope;
@@ -79,12 +81,14 @@ class OrderController extends Controller
         'showroom' => 'Салон',
         'source' => 'Источник',
         'channel' => 'Тип заявки',
+        'payment_method' => 'Способ оплаты',
         'status' => 'Статус',
         'contact_name' => 'Имя',
         'phones' => 'Телефоны',
         'responsible' => 'Ответственный',
         'callback_at' => 'Перезвон',
         'arrival_at' => 'Приезд',
+        'visit_result' => 'Итог визита',
         'car_interest' => 'Интерес к автомобилю',
         'reason' => 'Причина',
         'reason_comment' => 'Пояснение к причине',
@@ -392,7 +396,11 @@ class OrderController extends Controller
             ->map(fn (Source $source) => [
                 'id' => $source->id,
                 'name' => $source->name,
-                'channels' => $source->channels->map(fn (ContactChannel $channel) => ['id' => $channel->id, 'name' => $channel->name])->values()->all(),
+                'channels' => $source->channels->map(fn (ContactChannel $channel) => [
+                    'id' => $channel->id,
+                    'name' => $channel->name,
+                    'preferred' => $channel->code === ContactChannel::CALLBACK,
+                ])->values()->all(),
             ])
             ->values()
             ->all();
@@ -427,12 +435,21 @@ class OrderController extends Controller
                 ->map(fn (User $candidate) => [
                     'id' => $candidate->id,
                     'name' => $candidate->name,
-                    'showroom_ids' => $assignAny || $candidate->has_global_access ? null : array_values(array_intersect($candidate->showrooms->modelKeys(), $showroomIds)),
+                    // Null only for global access: the form filters by the chosen showroom.
+                    // assign_any still loads candidates of every showroom, but each keeps
+                    // their own salons so Р1 operators do not appear under Р2.
+                    'showroom_ids' => $candidate->has_global_access
+                        ? null
+                        : ($assignAny
+                            ? $candidate->showrooms->modelKeys()
+                            : array_values(array_intersect($candidate->showrooms->modelKeys(), $showroomIds))),
                 ])
                 ->values();
         }
 
         $statuses = OrderStatus::query()->where('active', true)->whereNull('purpose')->orderBy('sort_order')->orderBy('name')->get();
+        $paymentMethods = PaymentMethod::query()->where('active', true)->orderBy('sort_order')->orderBy('id')->get();
+        $visitResults = VisitResult::query()->where('active', true)->orderBy('sort_order')->orderBy('id')->get();
 
         return [
             'showrooms' => $this->options($showrooms),
@@ -444,8 +461,12 @@ class OrderController extends Controller
                 'color' => $status->color->value,
                 'requires_callback_at' => $status->requires_callback_at,
                 'requires_arrival_at' => $status->requires_arrival_at,
+                'requires_visit_result' => $status->requires_visit_result,
                 'required_reason' => $status->required_reason?->value,
             ])->values(),
+            'paymentMethods' => $this->options($paymentMethods),
+            'visitResults' => $this->options($visitResults),
+            'defaultPaymentMethodId' => $paymentMethods->firstWhere('code', PaymentMethod::UNDEFINED)?->id,
             'initialStatusId' => $statuses->firstWhere('is_initial', true)?->id,
             'reasonTitles' => collect(OrderReasonType::cases())->mapWithKeys(fn (OrderReasonType $type) => [$type->value => $type->singular()]),
             'responsibles' => $responsibles,
@@ -519,7 +540,7 @@ class OrderController extends Controller
         $user = $request->user();
 
         $model = $this->scope->orders(Order::query(), $user)
-            ->with(['showroom', 'source:id,name,active', 'channel:id,name,active', 'status', 'responsible:id,name,active', 'creator:id,name', 'trashReason', 'dropReason', 'additionalPhones', 'transferOut.toShowroom:id,name', 'transferOut.targetOrder', 'transferIn.fromShowroom:id,name', 'transferIn.sourceOrder', 'siteRequest'])
+            ->with(['showroom', 'source:id,name,active,source_kind_id', 'source.kind:id,icon,show_icon,icon_color', 'channel:id,name,active', 'paymentMethod:id,name,active', 'visitResult:id,name,active', 'status', 'responsible:id,name,active', 'creator:id,name', 'trashReason', 'dropReason', 'additionalPhones', 'transferOut.toShowroom:id,name', 'transferOut.targetOrder', 'transferIn.fromShowroom:id,name', 'transferIn.sourceOrder', 'siteRequest'])
             ->findOrFail($order);
 
         $this->authorize('view', $model);
@@ -719,7 +740,10 @@ class OrderController extends Controller
             'origin' => $order->origin->label(),
             'showroom' => ['id' => $order->showroom_id, 'name' => $order->showroom->name, 'timezone' => $timezone],
             'source' => $this->option($order->source),
+            'source_icon' => $order->source->kind->show_icon ? $order->source->kind->icon : null,
+            'source_icon_color' => $order->source->kind->icon_color->value,
             'channel' => $this->option($order->channel),
+            'payment_method' => $order->paymentMethod ? $this->option($order->paymentMethod) : null,
             'status' => [
                 'id' => $order->status->id,
                 'name' => $order->status->name,
@@ -732,6 +756,7 @@ class OrderController extends Controller
             'car_interest' => $order->car_interest,
             'callback_at' => $this->orders->formatLocal($order->callback_at, $timezone),
             'arrival_at' => $this->orders->formatLocal($order->arrival_at, $timezone),
+            'visit_result' => $order->visitResult ? $this->option($order->visitResult) : null,
             'reason' => $reason ? ['type' => $order->reasonType()?->value, ...$this->option($reason)] : null,
             'reason_comment' => $order->reason_comment,
             'event_at' => $order->event_at->toISOString(),
@@ -829,9 +854,22 @@ class OrderController extends Controller
             $responsibles = $this->options($candidates);
         }
 
+        $paymentMethods = PaymentMethod::query()
+            ->where(fn (Builder $query) => $query->where('active', true)->orWhereKey($order->payment_method_id))
+            ->orderBy('sort_order')->orderBy('id')
+            ->get();
+
+        $visitResults = VisitResult::query()
+            ->where(fn (Builder $query) => $query->where('active', true)->orWhereKey($order->visit_result_id))
+            ->orderBy('sort_order')->orderBy('id')
+            ->get();
+
         return [
             'channels' => $this->options($channels),
+            'paymentMethods' => $this->options($paymentMethods),
+            'visitResults' => $this->options($visitResults),
             'statuses' => $statuses->map(fn (OrderStatus $status) => [
+                'requires_visit_result' => $status->requires_visit_result,
                 'id' => $status->id,
                 'name' => $status->name,
                 'active' => $status->active,

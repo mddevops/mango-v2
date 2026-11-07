@@ -210,7 +210,7 @@ class OrderPhonesTest extends TestCase
      */
     private function createOrder(User $actor, Source $source, array $phones): Order
     {
-        $this->actingAs($actor)->post(route('orders.store'), $this->payload($source, $phones))->assertSessionHasNoErrors();
+        $this->actingAs($actor)->post(route('orders.store'), $this->payload($source, $phones, $actor))->assertSessionHasNoErrors();
 
         return Order::query()->latest('id')->firstOrFail();
     }
@@ -219,8 +219,10 @@ class OrderPhonesTest extends TestCase
      * @param  list<array{number: string, name: string|null}>  $phones
      * @return array<string, mixed>
      */
-    private function payload(Source $source, array $phones): array
+    private function payload(Source $source, array $phones, ?User $actor = null): array
     {
+        $actor ??= $this->administrator();
+
         return [
             'showroom_id' => $source->showroom_id,
             'source_id' => $source->id,
@@ -228,6 +230,7 @@ class OrderPhonesTest extends TestCase
             'contact_name' => 'Клиент',
             'phones' => $phones,
             'car_interest' => null,
+            'responsible_id' => $actor->id,
         ];
     }
 

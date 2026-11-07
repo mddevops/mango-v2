@@ -52,6 +52,7 @@ class OrderStatusController extends Controller
                 'show_as_tab' => $status->show_as_tab,
                 'requires_callback_at' => $status->requires_callback_at,
                 'requires_arrival_at' => $status->requires_arrival_at,
+                'requires_visit_result' => $status->requires_visit_result,
                 'required_reason' => $status->required_reason?->value,
                 'lock_version' => $status->lock_version,
             ]),

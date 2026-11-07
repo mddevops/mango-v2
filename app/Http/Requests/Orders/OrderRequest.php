@@ -65,12 +65,14 @@ class OrderRequest extends FormRequest
             'showroom_id' => $this->validated('showroom_id') === null ? null : $this->number('showroom_id'),
             'source_id' => $this->number('source_id'),
             'contact_channel_id' => $this->number('contact_channel_id'),
+            'payment_method_id' => $this->paymentMethodId(),
             'contact_name' => $this->nullableText('contact_name'),
             ...$this->phoneData(),
             'car_interest' => $this->nullableText('car_interest'),
             'order_status_id' => $this->validated('order_status_id') === null ? null : $this->number('order_status_id'),
             'callback_at' => $this->nullableText('callback_at'),
             'arrival_at' => $this->nullableText('arrival_at'),
+            'visit_result_id' => $this->visitResultId(),
             'reason_id' => $this->validated('reason_id') === null ? null : $this->number('reason_id'),
             'reason_comment' => $this->nullableText('reason_comment'),
             'comment' => $this->nullableText('comment'),
@@ -85,12 +87,14 @@ class OrderRequest extends FormRequest
     {
         return [
             'contact_channel_id' => $this->number('contact_channel_id'),
+            'payment_method_id' => $this->paymentMethodId(),
             'contact_name' => $this->nullableText('contact_name'),
             ...$this->phoneData(),
             'car_interest' => $this->nullableText('car_interest'),
             'order_status_id' => $this->number('order_status_id'),
             'callback_at' => $this->nullableText('callback_at'),
             'arrival_at' => $this->nullableText('arrival_at'),
+            'visit_result_id' => $this->visitResultId(),
             'reason_id' => $this->validated('reason_id') === null ? null : $this->number('reason_id'),
             'reason_comment' => $this->nullableText('reason_comment'),
             'lock_version' => $this->number('lock_version'),
@@ -147,6 +151,7 @@ class OrderRequest extends FormRequest
         $common = [
             'showroom_id' => ['prohibited'],
             'contact_channel_id' => ['required', 'integer'],
+            'payment_method_id' => ['nullable', 'integer'],
             'contact_name' => ['nullable', 'string', 'max:150'],
             'phones' => ['required', 'array', 'min:1', 'max:'.(self::MAX_EXTRA_PHONES + 1)],
             'phones.*' => ['array'],
@@ -157,12 +162,15 @@ class OrderRequest extends FormRequest
             }],
             'phones.*.name' => ['nullable', 'string', 'max:100'],
             'car_interest' => ['nullable', 'string', 'max:2000'],
-            'responsible_id' => $this->canAssign() ? ['sometimes', 'nullable', 'integer'] : ['prohibited'],
+            'responsible_id' => $this->canAssign()
+                ? ($this->isUpdate() ? ['sometimes', 'nullable', 'integer'] : ['required', 'integer'])
+                : ['prohibited'],
         ];
 
         $schedule = [
             'callback_at' => ['nullable', 'date_format:'.OrderManager::DATETIME_FORMAT],
             'arrival_at' => ['nullable', 'date_format:'.OrderManager::DATETIME_FORMAT],
+            'visit_result_id' => ['nullable', 'integer'],
             'reason_id' => ['nullable', 'integer'],
             'reason_comment' => ['nullable', 'string', 'max:2000'],
         ];
@@ -171,7 +179,7 @@ class OrderRequest extends FormRequest
             return [
                 ...$common,
                 ...$schedule,
-                'showroom_id' => ['nullable', 'integer'],
+                'showroom_id' => ['required', 'integer'],
                 'source_id' => ['required', 'integer'],
                 'order_status_id' => ['nullable', 'integer'],
                 'comment' => $this->user()?->can(P::ORDERS_COMMENT) ? ['nullable', 'string', 'max:5000'] : ['prohibited'],
@@ -211,8 +219,10 @@ class OrderRequest extends FormRequest
     public function attributes(): array
     {
         return [
+            'showroom_id' => 'автосалон',
             'source_id' => 'источник',
             'contact_channel_id' => 'тип заявки',
+            'payment_method_id' => 'способ оплаты',
             'contact_name' => 'имя',
             'phones' => 'телефоны',
             'phones.*.number' => 'телефон',
@@ -221,6 +231,7 @@ class OrderRequest extends FormRequest
             'order_status_id' => 'статус',
             'callback_at' => 'дата перезвона',
             'arrival_at' => 'дата приезда',
+            'visit_result_id' => 'итог визита',
             'reason_id' => 'причина',
             'reason_comment' => 'пояснение к причине',
             'responsible_id' => 'ответственный',
@@ -235,7 +246,11 @@ class OrderRequest extends FormRequest
     {
         return [
             'showroom_id.prohibited' => 'Салон определяется источником и не задаётся вручную.',
+            'showroom_id.required' => 'Выберите автосалон.',
+            'source_id.required' => 'Выберите источник.',
             'source_id.prohibited' => 'Источник заявки нельзя изменить после создания.',
+            'contact_channel_id.required' => 'Выберите тип заявки.',
+            'responsible_id.required' => 'Выберите ответственного.',
             'responsible_id.prohibited' => 'Нет права назначать ответственного.',
             'comment.prohibited' => 'Нет права добавлять комментарии.',
             'phones.required' => 'Укажите основной телефон.',
@@ -265,6 +280,16 @@ class OrderRequest extends FormRequest
         }
 
         return ['phones' => $phones, 'phone_names' => $names];
+    }
+
+    private function paymentMethodId(): ?int
+    {
+        return $this->validated('payment_method_id') === null ? null : $this->number('payment_method_id');
+    }
+
+    private function visitResultId(): ?int
+    {
+        return $this->validated('visit_result_id') === null ? null : $this->number('visit_result_id');
     }
 
     /**

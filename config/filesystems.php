@@ -47,6 +47,17 @@ return [
             'report' => false,
         ],
 
+        // Photos and logos of the car catalog (the auto_ru database stores paths relative to it),
+        // published through the public storage link.
+        'auto_catalog' => [
+            'driver' => 'local',
+            'root' => storage_path('app/public/auto'),
+            'url' => '/storage/auto',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

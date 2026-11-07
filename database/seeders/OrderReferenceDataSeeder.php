@@ -29,7 +29,7 @@ class OrderReferenceDataSeeder extends Seeder
         ['name' => 'Не отвечает', 'active' => true, 'sort_order' => 3, 'tab' => true],
         ['name' => 'Одобрить', 'active' => true, 'sort_order' => 4],
         ['name' => 'Приедет', 'active' => true, 'sort_order' => 6, 'tab' => true, 'arrival' => true],
-        ['name' => 'Приехал', 'active' => true, 'sort_order' => 7, 'tab' => true],
+        ['name' => 'Приехал', 'active' => true, 'sort_order' => 7, 'tab' => true, 'arrival' => true, 'visit_result' => true],
         ['name' => 'Корзина', 'active' => true, 'sort_order' => 8, 'tab' => true, 'reason' => 'trash'],
         ['name' => 'Повтор', 'active' => true, 'sort_order' => 9],
         ['name' => 'Одобренный', 'active' => true, 'sort_order' => 5],
@@ -125,7 +125,7 @@ class OrderReferenceDataSeeder extends Seeder
     }
 
     /**
-     * @param  array{name: string, active: bool, sort_order: int, tab?: bool, callback?: bool, arrival?: bool, reason?: string}  $row
+     * @param  array{name: string, active: bool, sort_order: int, tab?: bool, callback?: bool, arrival?: bool, visit_result?: bool, reason?: string}  $row
      */
     private function createStatus(array $row): void
     {
@@ -142,6 +142,7 @@ class OrderReferenceDataSeeder extends Seeder
             'show_as_tab' => $row['tab'] ?? false,
             'requires_callback_at' => $row['callback'] ?? false,
             'requires_arrival_at' => $row['arrival'] ?? false,
+            'requires_visit_result' => $row['visit_result'] ?? false,
             'required_reason' => $row['reason'] ?? null,
         ]);
         $status->active = $row['active'];

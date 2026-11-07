@@ -22,7 +22,7 @@ final class OrdersListPreferences
     public const MAX_KEY_LENGTH = 50;
 
     /**
-     * @return array{view: 'table'|'cards', filters: bool, columns: array<string, bool>|null, order: list<string>|null, pinning: array{start: list<string>, end: list<string>}, sort: string|null, direction: 'asc'|'desc'|null}
+     * @return array{view: 'table'|'cards', density: 'default'|'compact', filters: bool, columns: array<string, bool>|null, order: list<string>|null, pinning: array{start: list<string>, end: list<string>}, sort: string|null, direction: 'asc'|'desc'|null}
      */
     public static function normalize(mixed $stored): array
     {
@@ -40,6 +40,7 @@ final class OrdersListPreferences
 
         return [
             'view' => ($stored['view'] ?? null) === 'cards' ? 'cards' : 'table',
+            'density' => in_array($stored['density'] ?? null, self::DENSITIES, true) ? $stored['density'] : 'default',
             'filters' => is_bool($stored['filters'] ?? null) ? $stored['filters'] : true,
             'columns' => $columns === [] ? null : $columns,
             'order' => $order === [] ? null : $order,

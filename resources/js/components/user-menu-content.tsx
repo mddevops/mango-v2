@@ -1,12 +1,26 @@
 import { Link, router } from '@inertiajs/react';
-import { LogOut, Settings } from 'lucide-react';
+import {
+    LogOut,
+    Monitor,
+    MoonStar,
+    Settings,
+    Sun,
+    SunMoon,
+} from 'lucide-react';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
     DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserInfo } from '@/components/user-info';
+import { useAppearance } from '@/hooks/use-appearance';
+import type { Appearance } from '@/hooks/use-appearance';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
@@ -16,8 +30,15 @@ type Props = {
     user: User;
 };
 
+const THEMES: { value: Appearance; label: string; icon: typeof Sun }[] = [
+    { value: 'light', label: 'Светлая', icon: Sun },
+    { value: 'dark', label: 'Тёмная', icon: MoonStar },
+    { value: 'system', label: 'Как в системе', icon: Monitor },
+];
+
 export function UserMenuContent({ user }: Props) {
     const cleanup = useMobileNavigation();
+    const { appearance, updateAppearance } = useAppearance();
 
     const handleLogout = () => {
         cleanup();
@@ -44,6 +65,30 @@ export function UserMenuContent({ user }: Props) {
                         Настройки
                     </Link>
                 </DropdownMenuItem>
+                <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                        <SunMoon className="mr-2" />
+                        Тема
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="min-w-44">
+                        <DropdownMenuRadioGroup
+                            value={appearance}
+                            onValueChange={(value) =>
+                                updateAppearance(value as Appearance)
+                            }
+                        >
+                            {THEMES.map((theme) => (
+                                <DropdownMenuRadioItem
+                                    key={theme.value}
+                                    value={theme.value}
+                                >
+                                    <theme.icon />
+                                    {theme.label}
+                                </DropdownMenuRadioItem>
+                            ))}
+                        </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                </DropdownMenuSub>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

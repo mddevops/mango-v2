@@ -17,11 +17,11 @@ class OrderStatusManager
 {
     use HandlesUniqueConstraints;
 
-    public const INITIAL_REQUIREMENTS = 'Начальный статус получают все новые заявки автоматически, поэтому он не может требовать дату или причину.';
+    public const INITIAL_REQUIREMENTS = 'Начальный статус получают все новые заявки автоматически, поэтому он не может требовать дату, итог визита или причину.';
 
     private const AUDITED = [
         'name', 'description', 'color', 'show_as_tab',
-        'requires_callback_at', 'requires_arrival_at', 'required_reason',
+        'requires_callback_at', 'requires_arrival_at', 'requires_visit_result', 'required_reason',
     ];
 
     public function __construct(private readonly AuditLogger $audit) {}

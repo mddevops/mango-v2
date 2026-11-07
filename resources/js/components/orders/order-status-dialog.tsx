@@ -73,9 +73,9 @@ function OrderStatusForm({
         show_as_tab: item?.show_as_tab ?? false,
         requires_callback_at: item?.requires_callback_at ?? false,
         requires_arrival_at: item?.requires_arrival_at ?? false,
+        requires_visit_result: item?.requires_visit_result ?? false,
         required_reason: (item?.required_reason ?? NO_REASON) as
-            | OrderReasonTypeValue
-            | typeof NO_REASON,
+            OrderReasonTypeValue | typeof NO_REASON,
         lock_version: item?.lock_version ?? 0,
     });
 
@@ -97,11 +97,13 @@ function OrderStatusForm({
 
         form.transform((data) => ({
             name: data.name,
-            description: data.description.trim() === '' ? null : data.description,
+            description:
+                data.description.trim() === '' ? null : data.description,
             color: data.color,
             show_as_tab: data.show_as_tab,
             requires_callback_at: data.requires_callback_at,
             requires_arrival_at: data.requires_arrival_at,
+            requires_visit_result: data.requires_visit_result,
             required_reason:
                 data.required_reason === NO_REASON
                     ? null
@@ -125,8 +127,8 @@ function OrderStatusForm({
                     {item ? 'Статус заявки: изменение' : 'Статус заявки: новый'}
                 </DialogTitle>
                 <DialogDescription>
-                    Статусы не удаляются — их можно отключить. Порядок в
-                    списках меняется перетаскиванием строк таблицы.
+                    Статусы не удаляются — их можно отключить. Порядок в списках
+                    меняется перетаскиванием строк таблицы.
                 </DialogDescription>
             </DialogHeader>
 
@@ -231,6 +233,15 @@ function OrderStatusForm({
                         form.setData('requires_arrival_at', checked)
                     }
                     label="Указать дату и время планируемого приезда"
+                />
+                <CheckboxOption
+                    id="order-status-visit-result"
+                    checked={form.data.requires_visit_result}
+                    onChange={(checked) =>
+                        form.setData('requires_visit_result', checked)
+                    }
+                    label="Указать итог визита"
+                    hint="Значения — в справочнике «Итоги визита»."
                 />
                 <FormField
                     label="Указать причину"
